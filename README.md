@@ -1,2 +1,2 @@
 # SLifter
-SaSS lifter 
+SaSS assembler to LLVM IR lifter
