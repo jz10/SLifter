@@ -11,7 +11,6 @@ class InvalidOperandException(Exception):
 class Operand:
     def __init__(self, Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsDim, IsThreadIdx):
         self._Name = Name
-        self._Reg = Reg
         self._Suffix = Suffix
         self._ArgOffset = ArgOffset
         self._IsReg = IsReg
@@ -23,6 +22,13 @@ class Operand:
         self._TypeDesc = "NOTYPE"
         self._IRType = None
         self._IRRegName = None
+
+        if Reg and '+' in Reg:
+            self._Reg = Reg.split('+')[0]
+            self._MemAddrOffset = Reg.split('+')[1]
+        else:
+            self._Reg = Reg
+            self._MemAddrOffset = None
 
     @property
     def Name(self):

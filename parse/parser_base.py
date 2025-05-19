@@ -36,9 +36,29 @@ class SaSSParserBase:
 
         # The instruction list
         Insts = []
-        
+
+        # Handle dual issue(remove curly braces)
+        lines = self.file.split('\n')
+        modified_lines = []
+        skip_next = False
+        for i, line in enumerate(lines):
+            if skip_next:
+                skip_next = False
+                continue
+            if '{' in line:
+                line = line.replace("{", "")
+            if "}" in line:
+                if line[-1] != "/":
+                    line = line + lines[i + 1]
+                    line = line.replace("\n", "")
+                    skip_next = True
+                line = line.replace("}",";")
+            modified_lines.append(line)
+
+        lines = modified_lines
+
         # Main loop that parse the SaSS text file
-        for line_num, line in enumerate(self.file.split('\n')):
+        for line_num, line in enumerate(lines):
             # Process lines in SaSS text file
 
             # Process function title and misc
@@ -102,6 +122,18 @@ class SaSSParserBase:
         items = line.split('/*')
         return items[1]
     
+    def ExtractPredicateReg(self, opcode):
+        if opcode[0] == '@' and opcode[1] == 'P' and opcode[2].isdigit():
+            return opcode[1:3]
+        
+        return None
+    
+    def ExtractPredicateRegNeg(self, opcode):
+        if opcode[0] == '@' and opcode[1] == '!' and opcode[2] == 'P' and opcode[3].isdigit():
+            return opcode[1:4]
+            
+        return None
+    
     # Retrieve instruction's opcode
     def GetInstOpcode(self, line):
         items = line.split(';')
@@ -111,14 +143,23 @@ class SaSSParserBase:
         opcode = items[0]
         PFlag = None
         # Handle the condntion branch flags
-        if opcode == "@P0":
-            PFlag = "P0"
-            opcode = items[1]
-        elif opcode == "@!P0":
-            PFlag = "!P0"
-            opcode = items[1]
-        
+        # if opcode == "@P0":
+        #     PFlag = "P0"
+        #     opcode = items[1]
+        # elif opcode == "@!P0":
+        #     PFlag = "!P0"
+        #     opcode = items[1]
+        pred_reg = self.ExtractPredicateReg(opcode)
+        pred_reg_neg = self.ExtractPredicateRegNeg(opcode)
         rest_content = line.replace(items[0], "")
+        if pred_reg:
+            PFlag = pred_reg 
+            opcode = items[1]
+            rest_content = rest_content.replace(items[1], "")
+        elif pred_reg_neg:
+            PFlag = pred_reg_neg
+            opcode = items[1]
+            rest_content = rest_content.replace(items[1], "")
             
         return opcode, PFlag, rest_content
 
@@ -177,8 +218,8 @@ class SaSSParserBase:
             if len(items) > 1:
                 Reg = items[0]
                 Suffix = items[1]
-                if len(items) > 2:
-                    raise InvalidOperandException
+                if len(items) > 2 and items[2] != "reuse": # reuse is a assembly hint for register reuse
+                        raise InvalidOperandException
                 
             return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsDim, IsThreadIdx)
 
