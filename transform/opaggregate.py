@@ -25,7 +25,7 @@ class OperAggregate(SaSSTransform):
             for i in range(len(Insts)):
                 Inst = Insts[i]
                 if Inst in SkipInsts:
-                    continue;
+                    continue
                 
                 if i < len(Insts) - 1:
                     TwinIdx = self.IsTwinIdxPattern(Inst, Insts[i + 1])

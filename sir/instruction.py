@@ -36,7 +36,7 @@ class Instruction:
 
     @property
     def pflag(self):
-        if self._opcodes[0] == "P0" or self._opcodes[0] == "!P0":
+        if self.IsPredicateReg(self._opcodes[0]):
             return self._opcodes[0]
         else:
             return None
@@ -70,30 +70,40 @@ class Instruction:
 
         return False
 
+    # def IsBranch(self):
+    #     Idx = 0
+    #     # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+    #     if self.IsPredicateReg(self._opcodes[Idx]):
+    #         Idx = Idx + 1
+    #     return self._opcodes[Idx] == "ISETP" 
+
     def IsBranch(self):
-        Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
-            Idx = Idx + 1
-        return self._opcodes[Idx] == "ISETP" 
+        if len(self.operands)>0 and self.GetDef().Reg:
+            return self.IsPredicateReg(self.GetDef().Reg)
 
     def InCondPath(self):
-        return self._opcodes[0] == "P0" or self._opcodes[0] == "!P0"
+        return self.IsPredicateReg(self._opcodes[0])
 
     def IsBinary(self):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
         return self._opcodes[Idx] == "FFMA" or self._opcodes[Idx] == "FADD" or self._opcodes[Idx] == "XMAD" or self._opcodes[Idx] == "IMAD" or self._opcodes[Idx] == "SHL" or self._opcodes[Idx] == "SHR" or self._opcodes[Idx] == "SHF" or self._opcodes[Idx] == "S2R"
+        # return self._opcodes[Idx] == "FFMA" or self._opcodes[Idx] == "FADD" or self._opcodes[Idx] == "XMAD" or self._opcodes[Idx] == "IMAD" or self._opcodes[Idx] == "SHL" or self._opcodes[Idx] == "SHR" or self._opcodes[Idx] == "SHF" or self._opcodes[Idx] == "S2R" or self._opcodes[Idx] == "ISCADD"
+    
     
     def IsNOP(self):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
         return self._opcodes[Idx] == "NOP"
 
     def IsAddrCompute(self):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
         if self._opcodes[Idx] == "IADD":
             # Check operands
@@ -106,13 +116,15 @@ class Instruction:
 
     def IsLoad(self):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
         return self._opcodes[Idx] == "LDG" or self._opcodes[Idx] == "SULD"
 
     def IsStore(self):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
         return self._opcodes[Idx] == "STG" or self._opcodes[Idx] == "SUST"
 
@@ -121,11 +133,37 @@ class Instruction:
         for Operand in self._operands:
             Operand.SetSkip()
             
+    # def ResolveType(self):
+    #     if not self.DirectlySolveType():
+    #         if not self.PartialSolveType():
+    #             print("checking ", self._opcodes[0])
+    #             raise UnsupportedOperatorException
+
     def ResolveType(self):
-        if not self.DirectlySolveType():
-            if not self.PartialSolveType():
-                print("checking ", self._opcodes[0])
-                raise UnsupportedOperatorException
+        if self.DirectlySolveType():
+            return True
+        
+        if self.PartialSolveType():
+            return True
+        
+        return False
+
+    # def ResolveType(self):
+    #     if not self.DirectlySolveType():
+    #         if not self.PartialSolveType():
+    #             print("Failed: ",end="")
+    #         else:
+    #             print("Success: ",end="")
+    #     else:
+    #         print("Success: ",end="")
+            
+    #     print(self._InstContent+" => ",end="")
+    #     for operand in self.operands:
+    #         if operand.Name:
+    #             print(operand.Name,end="")
+    #         if operand.TypeDesc:
+    #             print("("+operand.TypeDesc+"), ",end="")
+    #     print("")
 
     # Collect registers used in instructions
     def GetRegs(self, Regs, lifter):
@@ -183,14 +221,25 @@ class Instruction:
 
         return False
     
+    def IsPredicateReg(self, opcode):
+        if opcode[0] == 'P' and opcode[1].isdigit():
+            return True
+        if opcode[0] == '!' and opcode[1] == 'P' and opcode[2].isdigit():
+            return True
+        return False
+    
     # Directly resolve the type description, this is mainly working for binary operation
     def DirectlySolveType(self):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        #     Idx = Idx + 1
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
         TypeDesc = None
         if self._opcodes[Idx] == "FFMA":
             TypeDesc = "Float32"
+        elif self._opcodes[Idx] == "FMUL":
+            TypeDesc = "Float32"            
         elif self._opcodes[Idx] == "FADD":
             TypeDesc = "Float32"
         elif self._opcodes[Idx] == "XMAD":
@@ -222,52 +271,52 @@ class Instruction:
     def PartialSolveType(self):
         if self._opcodes[0] == "LDG":
             TypeDesc = self._operands[0].GetTypeDesc()
-            if TypeDesc != None:
+            if TypeDesc != None and "NOTYPE" not in TypeDesc and "PTR" not in TypeDesc:
                 self._operands[1].SetTypeDesc(TypeDesc + "_PTR")
             else:
                 TypeDesc = self._operands[1].GetTypeDesc()
-                if TypeDesc != None:
+                if TypeDesc != None and "NOTYPE" not in TypeDesc:
                     self._operands[0].SetTypeDesc(TypeDesc.replace('_PTR', ""))
                 else:
-                    raise InvalidTypeException
+                    return False
         elif self._opcodes[0] == "SULD":
             TypeDesc = self._operands[0].GetTypeDesc()
-            if TypeDesc != None:
+            if TypeDesc != None and "NOTYPE" not in TypeDesc and "PTR" not in TypeDesc:
                 self._operands[1].SetTypeDesc(TypeDesc + "_PTR")
             else:
                 TypeDesc = self._operands[1].GetTypeDesc()
-                if TypeDesc != None:
+                if TypeDesc != None and "NOTYPE" not in TypeDesc:
                     self._operands[0].SetTypeDesc(TypeDesc.replace('_PTR', ""))
                 else:
-                    raise InvalidTypeException
+                    return False
         elif self._opcodes[0] == "STG":
             TypeDesc = self._operands[1].GetTypeDesc()
-            if TypeDesc != None:
+            if TypeDesc != None and "NOTYPE" not in TypeDesc and "PTR" not in TypeDesc:
                 self._operands[0].SetTypeDesc(TypeDesc + "_PTR")
             else:
                 TypeDesc = self._operands[0].GetTypeDesc()
-                if TypeDesc != None:
+                if TypeDesc != None and "NOTYPE" not in TypeDesc:
                     self._operands[0].SetTypeDesc(TypeDesc.replace('_PTR', ""))
                 else:
-                    raise InvalidTypeException
+                    return False
         elif self._opcodes[0] == "SUST":
             TypeDesc = self._operands[1].GetTypeDesc()
-            if TypeDesc != None:
+            if TypeDesc != None and "NOTYPE" not in TypeDesc and "PTR" not in TypeDesc:
                 self._operands[0].SetTypeDesc(TypeDesc + "_PTR")
             else:
                 TypeDesc = self._operands[0].GetTypeDesc()
-                if TypeDesc != None:
+                if TypeDesc != None and "NOTYPE" not in TypeDesc:
                     self._operands[0].SetTypeDesc(TypeDesc.replace('_PTR', ""))
                 else:
-                    raise InvalidTypeException
+                    return False
         elif self._opcodes[0] == 'IADD':
             TypeDesc = self._operands[0].GetTypeDesc()
-            if TypeDesc != None:
+            if TypeDesc != None and "NOTYPE" not in TypeDesc:
                 self._operands[1].SetTypeDesc("Int32") # The integer offset
                 self._operands[2].SetTypeDesc(TypeDesc)
         elif self._opcodes[0] == 'IADD32I':
             TypeDesc = self._operands[0].GetTypeDesc()
-            if TypeDesc != None:
+            if TypeDesc != None and "NOTYPE" not in TypeDesc:
                 self._operands[1].SetTypeDesc("Int32") # The integer offset
                 self._operands[2].SetTypeDesc(TypeDesc)
         else:
@@ -277,7 +326,8 @@ class Instruction:
 
     def Lift(self, lifter, IRBuilder, IRRegs, IRArgs):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
             
         if self._opcodes[Idx] == "MOV":
@@ -309,11 +359,9 @@ class Instruction:
         elif self._opcodes[Idx] == "IMAD":
             ResOp = self._operands[0]
             Op1 = self._operands[1]
-            # TODO
         elif self._opcodes[Idx] == "XMAD":
             ResOp = self._operands[1]
             Op1 = self._operands[1]
-            # TODO
         elif self._opcodes[Idx] == "EXIT":
             IRBuilder.ret_void()
         elif self._opcodes[Idx] == "FADD":
@@ -548,7 +596,25 @@ class Instruction:
 
                 # Store instruction
                 # IRBuilder.store(Val, Addr)
+        elif self._opcodes[Idx] == "FMUL":
+            ResOp = self._operands[0]
+            Op1 = self._operands[1]
+            Op2 = self._operands[2]
 
+            if Op1.IsReg and Op2.IsReg:
+                IRRes = IRRegs[ResOp.GetIRRegName(lifter)]
+                IROp1 = IRRegs[Op1.GetIRRegName(lifter)]
+                IROp2 = IRRegs[Op2.GetIRRegName(lifter)]
+
+                # Load operands
+                Load1 = IRBuilder.load(IROp1, "op1")
+                Load2 = IRBuilder.load(IROp2, "op2")
+
+                # Perform multiplication
+                IRVal = IRBuilder.mul(Load1, Load2, "mul_result")
+
+                # Store the result
+                IRBuilder.store(IRVal, IRRes)
         elif self._opcodes[Idx] == "FFMA":
             ResOp = self._operands[0]
             Op1 = self._operands[1]
@@ -607,10 +673,11 @@ class Instruction:
         elif self._opcodes[Idx] == "PBK":
              # TODO: may be sm35 specific?
             ResOp = self._opcodes[0]
-            
-        elif self._opcodes[Idx] == "@P1" or self._opcodes[Idx] == "@!P1":
-            return
-        
+        # elif self._opcodes[Idx] == "@P1" or self._opcodes[Idx] == "@!P1":
+        #     return
+        elif self._opcodes[Idx] == "ISET":
+            # Not implemented yet
+            ResOp = self._operands[0]
         else:
             print("lift instruction: ", self._opcodes[Idx])
             raise UnsupportedInstructionException 
@@ -618,7 +685,8 @@ class Instruction:
     # Lift branch instruction
     def LiftBranch(self, lifter, IRBuilder, IRRegs, IRArgs, TrueBr, FalseBr):
         Idx = 0
-        if self._opcodes[Idx] == "P0" or self.opcodes[Idx] == "!P0":
+        # if self._opcodes[Idx] == "P0" or self.opcodes[Idx] == "!P0":
+        if self.IsPredicateReg(self._opcodes[Idx]):
             Idx = Idx + 1
             
         if self._opcodes[Idx] == "ISETP":
