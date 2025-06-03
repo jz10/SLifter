@@ -15,7 +15,14 @@ class UnmatchedControlCode(Exception):
 REG_PREFIX = 'R'
 ARG_PREFIX = 'c[0x0]'
 ARG_OFFSET = 320 # 0x140
-THREAD_IDX = 'SR_TID'
+
+# Special register constants  
+SR_TID = 'SR_TID'
+SR_NTID = 'SR_NTID'
+SR_CTAID = 'SR_CTAID'
+SR_LANE = 'SR_LANE'
+SR_WARP = 'SR_WARP'
+SR_ZERO = 'SRZ'
 
 PTRREG_PREFIX = '[R'
 PATH_PREFIX = 'P'
@@ -198,14 +205,28 @@ class SaSSParserBase:
         Suffix = None
         ArgOffset = -1
         IsArg = False
-        IsDim = False
-        IsThreadIdx = False
+        IsMemAddr = False
+        IsImmediate = False
+        ImmediateValue = None
+        # Check if it is an immediate value
+        if Operand_Content.startswith('0x'):
+            IsImmediate = True
+            Operand_Content = Operand_Content.replace('0x', '')
+            # Convert to integer
+            ImmediateValue = int(Operand_Content, base = 16)
+            Name = Operand_Content
+            Reg = None
+            Suffix = None
+            ArgOffset = -1  # Reset ArgOffset since this is not an argument
+            
+            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, ImmediateValue)
 
         # Check if it is a register for address pointer, e.g. [R0]
         if Operand_Content.find(PTRREG_PREFIX) == 0: # operand starts from '[R'
             # Fill out the ptr related charactors
             Operand_Content = Operand_Content.replace(PTR_PREFIX, "")
             Operand_Content = Operand_Content.replace(PTR_SUFFIX, "")
+            IsMemAddr = True
             
         # Check if it is a register
         if Operand_Content.find(REG_PREFIX) == 0: # operand starts from 'R' 
@@ -221,7 +242,7 @@ class SaSSParserBase:
                 if len(items) > 2 and items[2] != "reuse": # reuse is a assembly hint for register reuse
                         raise InvalidOperandException
                 
-            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsDim, IsThreadIdx)
+            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
 
         # Check if it is a jump flag
         if Operand_Content.find(PATH_PREFIX) == 0: # operand starts from 'P'
@@ -229,7 +250,7 @@ class SaSSParserBase:
             Reg = Operand_Content
             Name = Operand_Content
 
-            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsDim, IsThreadIdx)
+            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
         
         # Check if it is a function argument or dimension related value
         if Operand_Content.find(ARG_PREFIX) == 0: 
@@ -245,26 +266,36 @@ class SaSSParserBase:
                 Operand_Content = items[0]
         
             ArgOffset = self.GetArgOffset(Operand_Content.replace(ARG_PREFIX, ""))
-            if ArgOffset < ARG_OFFSET:
-                IsArg = False
-                IsDim = True
 
             # Create argument operaand
-            Arg = Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsDim, IsThreadIdx)
+            Arg = Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate)
 
             # Register argument to function
             CurrFunc.RegisterArg(ArgOffset, Arg)
 
             return Arg
         
-        # Check if it is a special value
+        # Special zero register
+        if Operand_Content == SR_ZERO:
+            IsReg = True
+            Reg = Operand_Content
+            Name = Operand_Content
+            Suffix = None
+            
+            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
+        
+        # Check if it is a special register value
         items = Operand_Content.split('.')
-        if len(items) == 2:
-            if items[0].find(THREAD_IDX) == 0:                
-                IsThreadIdx = True
-                Suffix = items[1]
+        if len(items) >= 1:
+            special_regs = [SR_TID, SR_NTID, SR_CTAID, SR_LANE, SR_WARP]
+            for special_reg in special_regs:
+                if items[0].find(special_reg) == 0:
+                    Name = Operand_Content
+                    if len(items) > 1:
+                        Suffix = items[1]
+                    break
 
-        return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsDim, IsThreadIdx)
+        return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
 
     # Parse the argument offset
     def GetArgOffset(self, offset):

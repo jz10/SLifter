@@ -133,7 +133,8 @@ class Function:
                 for Reg in Regs:
                     Operand = Regs[Reg]
                     RegName = Operand.GetIRRegName(lifter)
-                    IRReg = Builder.alloca(Operand.GetIRType(lifter), 8, RegName)
+                    IRType = Operand.GetIRType(lifter)
+                    IRReg = Builder.alloca(IRType, 8, RegName)
                     # Register the IR registers
                     IRRegs[RegName] = IRReg
 

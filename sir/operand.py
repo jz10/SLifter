@@ -3,20 +3,27 @@ from lift.lifter import Lifter
 REG_PREFIX = 'R'
 ARG_PREFIX = 'c[0x0]'
 ARG_OFFSET = 320 # 0x140
-THREAD_IDX = 'SR_TID'
+
+# Special register constants
+SR_TID = 'SR_TID'
+SR_NTID = 'SR_NTID'  
+SR_CTAID = 'SR_CTAID'
+SR_LANE = 'SR_LANE'
+SR_WARP = 'SR_WARP'
 
 class InvalidOperandException(Exception):
     pass
 
 class Operand:
-    def __init__(self, Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsDim, IsThreadIdx):
+    def __init__(self, Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate=False, ImmediateValue=None):
         self._Name = Name
         self._Suffix = Suffix
         self._ArgOffset = ArgOffset
         self._IsReg = IsReg
         self._IsArg = IsArg
-        self._IsDim = IsDim
-        self._IsThreadIdx = IsThreadIdx
+        self._IsMemAddr = IsMemAddr
+        self._IsImmediate = IsImmediate
+        self._ImmediateValue = ImmediateValue
         self._Skipped = False
         
         self._TypeDesc = "NOTYPE"
@@ -45,10 +52,50 @@ class Operand:
     @property
     def IsArg(self):
         return self._IsArg
+    
+    @property
+    def IsMemAddr(self):
+        return self._IsMemAddr
+
+    @property
+    def IsImmediate(self):
+        return self._IsImmediate
+
+    @property
+    def ImmediateValue(self):
+        return self._ImmediateValue
+
+    @property
+    def IsSpecialReg(self):
+        return self._Name and (self._Name.startswith(SR_TID) or 
+                              self._Name.startswith(SR_NTID) or 
+                              self._Name.startswith(SR_CTAID) or 
+                              self._Name.startswith(SR_LANE) or 
+                              self._Name.startswith(SR_WARP))
 
     @property
     def IsThreadIdx(self):
-        return self._IsThreadIdx
+        return self._Name and self._Name.startswith(SR_TID)
+    
+    @property
+    def IsBlockDim(self):
+        return self._Name and self._Name.startswith(SR_NTID)
+    
+    @property
+    def IsBlockIdx(self):
+        return self._Name and self._Name.startswith(SR_CTAID)
+    
+    @property
+    def IsLaneId(self):
+        return self._Name and self._Name.startswith(SR_LANE)
+    
+    @property
+    def IsWarpId(self):
+        return self._Name and self._Name.startswith(SR_WARP)
+
+    @property
+    def IsZeroReg(self):
+        return self._Name == "RZ" or self._Name == "SRZ"
     
     @property
     def ArgOffset(self):
