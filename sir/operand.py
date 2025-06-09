@@ -98,6 +98,10 @@ class Operand:
         return self._Name == "RZ" or self._Name == "SRZ"
     
     @property
+    def IsPT(self):
+        return self._Name == "PT"
+    
+    @property
     def ArgOffset(self):
         return self._ArgOffset
 

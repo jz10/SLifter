@@ -1,0 +1,5 @@
+__pycache__
+
+*.o
+*.ll
+*.out

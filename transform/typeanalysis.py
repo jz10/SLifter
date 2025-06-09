@@ -10,28 +10,12 @@ class TypeAnalysis(SaSSTransform):
     def ProcessFunc(self, function):
         WorkList = self.TraverseCFG(function)
 
-        NewRegsMap = {}
-        RegsMap = {}
-
-        NewRegsRevMap = {}
-        RegsRevMap = {}
-
-        for BB in WorkList:
-            NewRegsMap[BB] = {}
-            RegsMap[BB] = {}
-            NewRegsRevMap[BB] = {}
-            RegsRevMap[BB] = {}
+        RegTypes = {}
+        print("=== Start of TypeAnalysis ===")
 
         Changed = True
         
         while Changed:
-            Changed = False
-
-            for BB in WorkList:
-                Changed |= self.ProcessBB(BB, NewRegsMap, RegsMap)
-            
-            for BB in reversed(WorkList):
-                Changed |= self.ProcessBBRev(BB, NewRegsRevMap, RegsRevMap)
 
             # for BB in WorkList:
             #     for Inst in BB.instructions:
@@ -42,7 +26,23 @@ class TypeAnalysis(SaSSTransform):
 
             # print(".")
 
-        # print("done")
+            Changed = False
+
+            for BB in WorkList:
+                Changed |= self.ProcessBB(BB, RegTypes, False)
+            
+            for BB in reversed(WorkList):
+                Changed |= self.ProcessBB(BB, RegTypes, True)
+
+        for BB in WorkList:
+            for Inst in BB.instructions:
+                print(Inst._InstContent+" => ", end="")
+                for Operand in Inst.operands:
+                    print(Operand._TypeDesc+", ",end="")
+                print("")
+
+        print("done")
+        print("=== End of TypeAnalysis ===")
 
 
     def TraverseCFG(self, function):
@@ -65,183 +65,147 @@ class TypeAnalysis(SaSSTransform):
                     Queue.append(SuccBB)
 
         return WorkList
-        
-
-    def ProcessBB(self, BB, NewRegsMap, RegsMap):
-            
-        NewRegs = {}
-
-        for Inst in BB.instructions:
-
-            if Inst.IsStore():
-                self.HandleStore(Inst, RegsMap[BB], NewRegs)
-
-            Inst.ResolveType()
-
-            self.UpdateNewRegsMap(NewRegs, Inst)
-        
-        NewRegsMapChanged = (NewRegs != NewRegsMap[BB])
-        NewRegsMap[BB] = NewRegs
-
-        # NewRegsMap union RegsMap, prefer NewRegsMap at key conflict
-        SuccessorRegsMap = {**RegsMap[BB], **NewRegsMap[BB]}  
-
-        for SuccessorBB in BB._succs:
-            if SuccessorBB in RegsMap:
-                RegsMap[SuccessorBB].update(SuccessorRegsMap)
-            else:
-                RegsMap[SuccessorBB] = SuccessorRegsMap.copy()            
-
-        return NewRegsMapChanged
     
-    def ProcessBBRev(self, BB, NewRegsRevMap, RegsRevMap):
-            
-        NewRegs = {}
 
-        for Inst in reversed(BB.instructions):
+    def printTypes(self, types):
+        print("{")
+        for reg, type_desc in types.items():
+            print(f"{reg}: {type_desc}")
 
-            if Inst.IsLoad() or Inst.IsAddrCompute():
-                self.HandleLoadOrAddrCompute(Inst, RegsRevMap[BB], NewRegs)
-
-            Inst.ResolveType()
-            self.UpdateNewRegsMap(NewRegs, Inst)
+        print("}")
         
-        NewRegsMapChanged = (NewRegs != NewRegsRevMap[BB])
-        NewRegsRevMap[BB] = NewRegs
 
-        # NewRegsMap union RegsMap, prefer NewRegsMap at key conflict
-        PredecessorRegsMap = {**RegsRevMap[BB], **NewRegsRevMap[BB]}  
+    def ProcessBB(self, BB, RegTypes, Reversed):
+        CurrentState = RegTypes.copy()
 
-        for PredecessorBB in BB._preds:
-            if PredecessorBB in RegsRevMap:
-                RegsRevMap[PredecessorBB].update(PredecessorRegsMap)
-            else:
-                RegsRevMap[PredecessorBB] = PredecessorRegsMap.copy()            
+        if Reversed:
+            Instructions = reversed(BB.instructions)
+        else:
+            Instructions = BB.instructions
 
-        return NewRegsMapChanged
-
-    def UpdateNewRegsMap(self, NewRegs, Inst):
-
-        for Operand in Inst._operands:
-            
-            if not Operand.IsReg:
-                continue
-
-            RegName = Operand.Reg
-
-            if "NOTYPE" in Operand.TypeDesc:
-                continue
-            
-            NewRegs[RegName] = Operand.TypeDesc
-
-    def HandleStore(self, Inst, Regs, NewRegs):
-        MergedRegs = {**Regs, **NewRegs}
+        for Inst in Instructions:
+            self.PropagateTypes(Inst, CurrentState)
         
-        for i in range(1, len(Inst._operands)):
-            UseOperand = Inst._operands[i]
-            if UseOperand.IsReg and UseOperand.Reg in MergedRegs:
-                Inst._operands[0]._TypeDesc = MergedRegs[UseOperand.Reg]+"_PTR"
-                Inst._operands[1]._TypeDesc = MergedRegs[UseOperand.Reg]
+        # self.printTypes(CurrentState)
+        Changed = (CurrentState != RegTypes)
+        RegTypes.update(CurrentState)          
 
-        # for i in range(1, len(Inst._operands)):
-        #     UseOperand = Inst._operands[i]
-        #     if UseOperand.IsReg and UseOperand.Reg in MergedRegs:
-        #         Inst._operands[i]._TypeDesc = MergedRegs[UseOperand.Reg]
+        return Changed
 
-    def HandleLoadOrAddrCompute(self, Inst, Regs, NewRegs):
-        MergedRegs = {**Regs, **NewRegs}
+    def PropagateTypes(self, Inst, RegTypes):
+        # Get Inst opcode       
+        idx = 0
+        if self.IsPredicateReg(Inst._opcodes[idx]):
+            idx += 1
+        op = Inst._opcodes[idx]
 
-        DefOperand = Inst._operands[0]
+        FLOAT32_OPS = {
+            "FADD"
+        }
 
-        if DefOperand.Reg in MergedRegs:
-            Inst._operands[0]._TypeDesc = MergedRegs[DefOperand.Reg]
+        INT32_OPS = {
+            "S2R", "IMAD"
+        }
 
-            if Inst.IsLoad():
-                Inst._operands[1]._TypeDesc = MergedRegs[DefOperand.Reg]+"_PTR"
-            if Inst.IsAddrCompute():
-                Inst._operands[1]._TypeDesc = MergedRegs[DefOperand.Reg]
+        INT_OPS = {
+            "IADD", "ISETP",
+            "AND", "OR", "XOR", "NOT", "LOP", "LOP3",
+            "SHL", "SHR", 
+        }
 
+        LD_OPS = {
+            "LDG", "SULD"
+        }
 
-        # for i in range(1, len(Inst._operands)):
-        #     UseOperand = Inst._operands[i]
-        #     if UseOperand.IsReg and UseOperand.Reg in MergedRegs:
-        #         Inst._operands[0]._TypeDesc = MergedRegs[UseOperand.Reg]
-        #         return
+        ST_OPS = {
+            "STG", "SUST"
+        }
 
-    # Propagate type infromation
-    def PropagateTypes(self, Func, Seeds):
-        VisitedInsts = []
-        while len(Seeds) > 0:
-            Inst, BB = Seeds.pop(0)
-            # Resolve type in instruction
-            Inst.ResolveType()
+        SKIP_OPS = {
+            "NOP", "EXIT", "RET"
+        }
 
-            # Set visited
-            VisitedInsts.append(Inst)
-            
-            # Propagate the uses for the value defined from this instruction
-            Uses = self.PropagateUsesForDef(Inst, BB, Func, VisitedInsts)
-            # Propagate the defs for the value used from this instruction
-            Defs = self.PropagateDefForUses(Inst, BB, Func, VisitedInsts)
+        # Force all operands to be float32
+        if op in FLOAT32_OPS:
+            for operand in Inst.operands:
+                operand.SetTypeDesc("Float32")
+                RegTypes[operand.Name] = operand.GetTypeDesc()
 
-            # Add the uses into worklist
-            for Use in Uses:
-                if Use not in Seeds:
-                    Seeds.append(Use)
+        # Make operands have the same type, except for predicate registers(for ISETP)
+        elif op in INT_OPS:
+            type = None
+            for operand in Inst.operands:
+                if operand.GetTypeDesc() != "NOTYPE" and not self.IsPredicateReg(operand.Name):
+                    if type is None:
+                        if type is not None and type != operand.GetTypeDesc():
+                            print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {type}")
+                        type = operand.GetTypeDesc()
 
-            # Add the defs into worklist
-            for Def in Defs:
-                if Def not in Seeds:
-                    Seeds.append(Def)
+            if type is not None:
+                for operand in Inst.operands:
+                    if not self.IsPredicateReg(operand.Name):
+                        operand.SetTypeDesc(type)
+                        RegTypes[operand.Name] = operand.GetTypeDesc()
+                    
+            # Force all predicate registers to be int1          
+            for operand in Inst.operands:
+                if self.IsPredicateReg(operand.Name):
+                    if operand.GetTypeDesc() != "NOTYPE" and operand.GetTypeDesc() != "Int1":
+                        print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to i1")
+                    
+                    operand.SetTypeDesc("Int1")
+                    RegTypes[operand.Name] = operand.GetTypeDesc()
 
-    # Collect the uses for the value defined in the given instruction
-    def PropagateUsesForDef(self, Inst, BB, Func, VisitedInsts):
-        Uses = []
+        # Force all operands to be int32, except for definition operand if wide flag is set
+        elif op in INT32_OPS:
+            for operand in Inst.operands:
+                operand.SetTypeDesc("Int32")
+                RegTypes[operand.Name] = operand.GetTypeDesc()
 
-        Def = Inst.GetDef()
-        if Def == None:
-            return Uses
-            
-        # Search uses in same basic block
-        Insts = BB.instructions
-        NeedCheck = False
-        for i in range(len(Insts)):
-            CurrInst = Insts[i]
-            if NeedCheck:
-                if CurrInst.IsStore():
-                    # Check store instruction
-                    if CurrInst.CheckAndUpdateUseType(Def) and not CurrInst in VisitedInsts:
-                        Uses.append([CurrInst, BB])
-                        VisitedInsts.append(CurrInst)
-            else:
-                if CurrInst == Inst:
-                    NeedCheck = True
-
-        return Uses
+            Def = Inst.GetDef()
+            if Def is not None and len(Inst.opcodes) > 1 and Inst.opcodes[1] == "WIDE":
+                Def.SetTypeDesc("Int64")
+                RegTypes[Def.Name] = Def.GetTypeDesc()
         
-        
-    # Collect the def for the values used in the given instruction
-    def PropagateDefForUses(self, Inst, BB, Func, VisitedInsts):
-        Defs = []
+        # Guess ptr type from value type
+        elif op in LD_OPS:
+            val_type = Inst.operands[0].GetTypeDesc()
+            ptr_type = Inst.operands[1].GetTypeDesc()
 
-        Uses = Inst.GetUses()
-    
-        # Search defs in same basic block
-        Insts = BB.instructions
-        NeedCheck = False
-        for i in reversed(range(len(Insts))):
-            CurrInst = Insts[i]
-            if NeedCheck:
-                if CurrInst.IsAddrCompute():
-                    if CurrInst.CheckAndUpdateDefType(Uses) and not CurrInst in VisitedInsts:
-                        Defs.append([CurrInst, BB])
-                        VisitedInsts.append(CurrInst)
-                if CurrInst.IsLoad():
-                    if CurrInst.CheckAndUpdateDefType(Uses) and not CurrInst in VisitedInsts:
-                        Defs.append([CurrInst, BB])
-                        VisitedInsts.append(CurrInst)
-            else:
-                if CurrInst == Inst:
-                    NeedCheck = True
-                        
-        return Defs
+            if val_type != "NOTYPE":
+
+                if ptr_type != "NOTYPE" and ptr_type != val_type + "_PTR":
+                    print(f"Warning: Type mismatch in {Inst._InstContent}: ptr overwriting from {ptr_type} to {val_type}_PTR")
+
+                Inst.operands[1].SetTypeDesc(val_type + "_PTR")
+                RegTypes[Inst.operands[1].Name] = Inst.operands[1].GetTypeDesc()
+
+        elif op in ST_OPS:
+            ptr_type = Inst.operands[0].GetTypeDesc()
+            val_type = Inst.operands[1].GetTypeDesc()
+
+            if val_type != "NOTYPE":
+
+                if ptr_type != "NOTYPE" and ptr_type != val_type + "_PTR":
+                    print(f"Warning: Type mismatch in {Inst._InstContent}: ptr overwriting from {ptr_type} to {val_type}_PTR")
+
+                Inst.operands[0].SetTypeDesc(val_type + "_PTR")
+                RegTypes[Inst.operands[0].Name] = Inst.operands[0].GetTypeDesc()
+
+        else:
+            if op not in SKIP_OPS:
+                print(f"Warning: Unhandled opcode {op} in {Inst._InstContent}")
+        
+        for operand in Inst.operands:
+            if operand.Name in RegTypes:
+                if operand.GetTypeDesc() != "NOTYPE" and operand.GetTypeDesc() != RegTypes[operand.Name]:
+                    print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {RegTypes[operand.Name]}")
+                
+                operand.SetTypeDesc(RegTypes[operand.Name])
+
+    def IsPredicateReg(self, opcode):
+        if opcode[0] == 'P' and (opcode[1].isdigit() or opcode[1] == 'T'):
+            return True
+        if opcode[0] == '!' and opcode[1] == 'P' and (opcode[2].isdigit() or opcode[2] == 'T'):
+            return True
+        return False

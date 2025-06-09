@@ -98,50 +98,19 @@ class Function:
         # Construct the map based on IR basic block
         self.BuildBBToIRMap(IRFunc, self.BlockMap)
         
-        IsEntry = True
-        # The argument offset to IR argument map, that is created at the entry block code generation
+        # SSA mapping: SIR argument versions to LLVM IR values (memory operands)
         IRArgs = {}
-        # The register name to IR register map, that is created at the entry block code generation
+        # Map all function arguments into IRArgs so they are available in every block
+        for arg_id, _ in enumerate(Args):
+            IRArgs[ArgIdxes[arg_id]] = IRFunc.args[arg_id]
+
+        # SSA mapping: register names to LLVM IR values
         IRRegs = {}
-        
+
+        # Lower each basic block
         for BB in self.blocks:
-            # Get basic block
-            IRBlock = self.BlockMap[BB] 
-            # Create IR builder
+            IRBlock = self.BlockMap[BB]
             Builder = lifter.ir.IRBuilder(IRBlock)
-            
-            if IsEntry:
-                ArgID = 0
-                # Alloc the variable for arguments and update argument map
-                for Arg in Args:
-                    ArgName = "Arg" + str(ArgID)
-                    IRArg = Builder.alloca(ArgTypes[ArgID], 8, ArgName)
-
-                    # Register the IR argument
-                    IRArgs[ArgIdxes[ArgID]] = IRArg
-                    
-                    # Store the argument values
-                    Builder.store(IRFunc.args[ArgID], IRArg)
-
-                    # Increment argument ID
-                    ArgID = ArgID + 1
-                    
-                # Collect registers' name with type information
-                Regs = self.GetRegs(lifter)
-
-                # Alloc the variable for registers
-                for Reg in Regs:
-                    Operand = Regs[Reg]
-                    RegName = Operand.GetIRRegName(lifter)
-                    IRType = Operand.GetIRType(lifter)
-                    IRReg = Builder.alloca(IRType, 8, RegName)
-                    # Register the IR registers
-                    IRRegs[RegName] = IRReg
-
-
-            # Lift the basic block content
-            BB.Lift(lifter, Builder, IRRegs, IRArgs, self.BlockMap, IRFunc)
-
-            IsEntry = False
+            BB.Lift(lifter, Builder, IRRegs, IRArgs, self.BlockMap)
 
         

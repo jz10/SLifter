@@ -141,23 +141,34 @@ class BasicBlock:
 
         return None
     
-    def Lift(self, lifter, IRBuilder, IRRegs, IRArgs, BlockMap, IRFunc):
-        for i in range(len(self.instructions)):
-            Inst = self.instructions[i]
-           
-            if Inst.IsBranch():
-                TrueBr = self.GetTrueBranch(Inst)
-                FalseBr = self.GetFalseBranch(Inst)
+    def Lift(self, lifter, IRBuilder, IRRegs, IRArgs, BlockMap):
+        # Handle SSA PHI instructions at the top of the block
+        idx = 0
+        while idx < len(self.instructions) and self.instructions[idx].opcodes[:1] == ["PHI"]:
+            phi_inst = self.instructions[idx]
+            # Definition operand is first operand
+            def_op = phi_inst.operands[0]
+            phi_val = IRBuilder.phi(def_op.GetIRType(lifter), def_op.GetIRRegName(lifter))
+            # Incoming operands correspond to predecessors in order
+            for i, use_op in enumerate(phi_inst.operands[1:]):
+                pred_bb = self._preds[i]
+                incoming = IRRegs.get(use_op.GetIRRegName(lifter)) if use_op.IsReg else IRArgs.get(use_op.ArgOffset)
+                phi_val.add_incoming(incoming, BlockMap[pred_bb])
+            IRRegs[def_op.GetIRRegName(lifter)] = phi_val
+            idx += 1
+
+
+        # Lift remaining instructions until a branch or end
+        for inst in self.instructions[idx:]:
+            if inst.IsBranch():
+                true_br = self.GetTrueBranch(inst)
+                false_br = self.GetFalseBranch(inst)
                 try:
-                    # Lift branch instruction
-                    Inst.LiftBranch(lifter, IRBuilder, IRRegs, IRArgs, BlockMap[TrueBr], BlockMap[FalseBr])
+                    inst.LiftBranch(lifter, IRBuilder, IRRegs, IRArgs, BlockMap[true_br], BlockMap[false_br])
                 except Exception as e:
                     lifter.lift_errors.append(e)
-                    
                 break
-            
-            # Lift instruction
-            Inst.Lift(lifter, IRBuilder, IRRegs, IRArgs)
+            inst.Lift(lifter, IRBuilder, IRRegs, IRArgs)
 
     def dump(self):
         print("BB Addr: ", self.addr_content)

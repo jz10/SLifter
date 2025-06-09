@@ -29,13 +29,19 @@ class SSA(SaSSTransform):
             for BB in WorkList:
                 Changed |= self.ProcessBB(BB, InRegsMap, OutRegsMap, PhiNodesMap, function)
 
+        print("=== Start of SSA ===")
+        print()
         self.InsertPhiNodes(WorkList, PhiNodesMap)
-        
+
         self.RemapRegisters(WorkList)
-        
+
         self.PrintRenamedInstructions(WorkList)
 
+        self.UpdateInstContent(WorkList)
+
         print("SSA done")
+        print()
+        print("=== End of SSA ===")
 
     def TraverseCFG(self, function):
         EntryBB = function.blocks[0]
@@ -57,7 +63,6 @@ class SSA(SaSSTransform):
                     Queue.append(SuccBB)
 
         return WorkList
-        
 
     def ExtractBaseRegisterName(self, Reg):
         return Reg.split('@')[0]
@@ -88,10 +93,15 @@ class SSA(SaSSTransform):
 
     def UpdateUseOperands(self, Inst, CurrRegs):
         Uses = Inst.GetUses()
+
+        Def = Inst.GetDef()
+        if Def and Def.IsMemAddr:
+            Uses.append(Def)
+
         for Operand in Uses:
             if Operand.IsReg and Operand.Reg:
-                # Don't rename predicate registers
-                if Inst.IsPredicateReg(Operand.Reg):
+                # Don't rename predicate registers or RZ register
+                if Inst.IsPredicateReg(Operand.Reg) or Operand.Reg == "RZ":
                     continue
                 RegName = self.ExtractBaseRegisterName(Operand.Reg)
                 if RegName in CurrRegs:
@@ -100,15 +110,25 @@ class SSA(SaSSTransform):
 
     def UpdateDefinitionOperand(self, Inst, CurrRegs):
         Def = Inst.GetDef()
-        if Def and Def.IsReg and Def.Reg:
-            # Don't rename predicate registers
-            if Inst.IsPredicateReg(Def.Reg):
-                return
+        if not Def or not Def.IsReg:
+            return
+        
+        # STG.E [R6], R0 => R6 is an use even it is at the first position
+        if Def.IsMemAddr:
             RegName = self.ExtractBaseRegisterName(Def.Reg)
-            NewDef = self.CreateVersionedRegisterName(Def.Reg, Inst)
-            CurrRegs[RegName] = NewDef
-            Def._Name = NewDef
-            Def._Reg = NewDef
+            if RegName in CurrRegs:
+                Def._Name = CurrRegs[RegName]
+                Def._Reg = CurrRegs[RegName]
+            return
+        
+        # Don't rename predicate registers or RZ register
+        if Inst.IsPredicateReg(Def.Reg) or Def.Reg == "RZ":
+            return
+        RegName = self.ExtractBaseRegisterName(Def.Reg)
+        NewDef = self.CreateVersionedRegisterName(Def.Reg, Inst)
+        CurrRegs[RegName] = NewDef
+        Def._Name = NewDef
+        Def._Reg = NewDef
 
     def UpdateOutRegisterSet(self, BB, CurrRegs, OutRegsMap):
         OldOutRegs = OutRegsMap[BB].copy() if BB in OutRegsMap else {}
@@ -230,7 +250,7 @@ class SSA(SaSSTransform):
             for inst in basic_block.instructions:
                 for operand in inst.operands:
                     if operand.IsReg and operand.Reg:
-                        if inst.IsPredicateReg(operand.Reg):
+                        if inst.IsPredicateReg(operand.Reg) or operand.Reg == "RZ" or operand.Reg == "PT":
                             continue
                         
                         reg_name = operand.Reg
@@ -243,7 +263,7 @@ class SSA(SaSSTransform):
             for inst in basic_block.instructions:
                 for operand in inst.operands:
                     if operand.IsReg and operand.Reg:
-                        if inst.IsPredicateReg(operand.Reg):
+                        if inst.IsPredicateReg(operand.Reg) or operand.Reg == "RZ":
                             continue
                         
                         if operand.Reg in register_mapping:
@@ -251,3 +271,24 @@ class SSA(SaSSTransform):
                             operand._Reg = register_mapping[operand.Reg]
         
         print(f"Remapped {len(register_mapping)} registers to RN format")
+
+    def UpdateInstContent(self, WorkList):
+        for basic_block in WorkList:
+            for inst in basic_block.instructions:
+                operand_strs = []
+                for operand in inst.operands:
+                    if operand.IsMemAddr:
+                        if operand._MemAddrOffset:
+                            operand_strs.append(f"[{operand.Reg}+{operand._MemAddrOffset}]")
+                        else:
+                            operand_strs.append(f"[{operand.Reg}]")
+                    elif operand.IsReg:
+                        operand_strs.append(operand.Reg)
+                    elif operand.IsArg:
+                        operand_strs.append(f"c[0x0][0x{operand.ArgOffset:x}]")
+                    elif operand.IsSpecialReg:
+                        operand_strs.append(operand.Name)
+                    else:
+                        operand_strs.append(operand.Name if operand.Name else "<??>")
+                
+                inst._InstContent = f"{'.'.join(inst.opcodes)} {' '.join(operand_strs)}"

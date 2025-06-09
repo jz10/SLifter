@@ -266,7 +266,7 @@ class SaSSParserBase:
                 Operand_Content = items[0]
         
             ArgOffset = self.GetArgOffset(Operand_Content.replace(ARG_PREFIX, ""))
-
+            Name = Operand_Content
             # Create argument operaand
             Arg = Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate)
 

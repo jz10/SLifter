@@ -61,8 +61,14 @@ class Lifter :
             return self.ir.PointerType(self.ir.IntType(32))
         elif TypeDesc == "Float32_PTR":
             return self.ir.PointerType(self.ir.FloatType())
+        elif TypeDesc == "Int64":
+            return self.ir.IntType(64)
+        elif TypeDesc == "Int64_PTR":
+            return self.ir.PointerType(self.ir.IntType(64))
+        elif TypeDesc == "Int1":
+            return self.ir.IntType(1)
 
-        return self.ir.IntType(32)
+        raise ValueError(f"Unknown type: {TypeDesc}")
 
     def Shutdown(self):
         # Cleanup LLVM environment
