@@ -14,6 +14,8 @@ class TypeAnalysis(SaSSTransform):
         print("=== Start of TypeAnalysis ===")
 
         Changed = True
+
+        Iteration = 0
         
         while Changed:
 
@@ -33,6 +35,11 @@ class TypeAnalysis(SaSSTransform):
             
             for BB in reversed(WorkList):
                 Changed |= self.ProcessBB(BB, RegTypes, True)
+
+            Iteration += 1
+            if Iteration > 3:
+                print("Warning: TypeAnalysis exceeds 3 iterations, stopping")
+                break
 
         for BB in WorkList:
             for Inst in BB.instructions:
@@ -95,7 +102,7 @@ class TypeAnalysis(SaSSTransform):
     def PropagateTypes(self, Inst, RegTypes):
         # Get Inst opcode       
         idx = 0
-        if self.IsPredicateReg(Inst._opcodes[idx]):
+        if  Inst.IsPredicateReg(Inst._opcodes[idx]):
             idx += 1
         op = Inst._opcodes[idx]
 
@@ -104,9 +111,11 @@ class TypeAnalysis(SaSSTransform):
         }
 
         INT32_OPS = {
-            "S2R", "IMAD"
+            "S2R", "IMAD", "IADD3", "XMAD", "IADD32I",
+            "MOV" # TODO: assume MOV is always int32?
         }
 
+        # int32 or int64 depending on the operand
         INT_OPS = {
             "IADD", "ISETP",
             "AND", "OR", "XOR", "NOT", "LOP", "LOP3",
@@ -121,8 +130,12 @@ class TypeAnalysis(SaSSTransform):
             "STG", "SUST"
         }
 
+        CAST_OPS = {
+            "F2I", "I2F", "INTTOPTR"
+        }
+
         SKIP_OPS = {
-            "NOP", "EXIT", "RET"
+            "NOP", "EXIT", "RET", "SYNC", "SSY"
         }
 
         # Force all operands to be float32
@@ -135,7 +148,7 @@ class TypeAnalysis(SaSSTransform):
         elif op in INT_OPS:
             type = None
             for operand in Inst.operands:
-                if operand.GetTypeDesc() != "NOTYPE" and not self.IsPredicateReg(operand.Name):
+                if operand.GetTypeDesc() != "NOTYPE" and not Inst.IsPredicateReg(operand.Name):
                     if type is None:
                         if type is not None and type != operand.GetTypeDesc():
                             print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {type}")
@@ -143,13 +156,13 @@ class TypeAnalysis(SaSSTransform):
 
             if type is not None:
                 for operand in Inst.operands:
-                    if not self.IsPredicateReg(operand.Name):
+                    if not Inst.IsPredicateReg(operand.Name):
                         operand.SetTypeDesc(type)
                         RegTypes[operand.Name] = operand.GetTypeDesc()
                     
             # Force all predicate registers to be int1          
             for operand in Inst.operands:
-                if self.IsPredicateReg(operand.Name):
+                if Inst.IsPredicateReg(operand.Name):
                     if operand.GetTypeDesc() != "NOTYPE" and operand.GetTypeDesc() != "Int1":
                         print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to i1")
                     
@@ -192,6 +205,31 @@ class TypeAnalysis(SaSSTransform):
                 Inst.operands[0].SetTypeDesc(val_type + "_PTR")
                 RegTypes[Inst.operands[0].Name] = Inst.operands[0].GetTypeDesc()
 
+        elif op == "PHI":
+            # We want operands to have the same type
+            type = None
+            for operand in Inst.operands:
+                if operand.GetTypeDesc() != "NOTYPE":
+                    if type is None:
+                        type = operand.GetTypeDesc()
+                    elif type != operand.GetTypeDesc():
+                        print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {type}")
+            
+            if type is not None:
+                for operand in Inst.operands:
+                    operand.SetTypeDesc(type)
+                    RegTypes[operand.Name] = operand.GetTypeDesc()
+
+        elif op in CAST_OPS:
+            if op == "F2I":
+                Inst.operands[0].SetTypeDesc("Float32")
+            elif op == "I2F":
+                Inst.operands[0].SetTypeDesc("Int32")
+            elif op == "INTTOPTR":
+                if Inst.operands[0].GetTypeDesc() != "NOTYPE" and Inst.operands[0].GetTypeDesc() != "Int32":
+                    print(f"Warning: Type mismatch in {Inst._InstContent}: {Inst.operands[0].Name} type overwriting from {Inst.operands[0].GetTypeDesc()} to Int32")
+                Inst.operands[0].SetTypeDesc("Int32")
+                RegTypes[Inst.operands[0].Name] = Inst.operands[0].GetTypeDesc()
         else:
             if op not in SKIP_OPS:
                 print(f"Warning: Unhandled opcode {op} in {Inst._InstContent}")
@@ -202,10 +240,3 @@ class TypeAnalysis(SaSSTransform):
                     print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {RegTypes[operand.Name]}")
                 
                 operand.SetTypeDesc(RegTypes[operand.Name])
-
-    def IsPredicateReg(self, opcode):
-        if opcode[0] == 'P' and (opcode[1].isdigit() or opcode[1] == 'T'):
-            return True
-        if opcode[0] == '!' and opcode[1] == 'P' and (opcode[2].isdigit() or opcode[2] == 'T'):
-            return True
-        return False

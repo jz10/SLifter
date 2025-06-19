@@ -215,6 +215,32 @@ class Instruction:
 
         return False
     
+    def __str__(self):
+        operand_strs = []
+        for operand in self._operands:
+            if operand.IsMemAddr:
+                if operand._MemAddrOffset:
+                    operand_strs.append(f"[{operand.Reg}+{operand._MemAddrOffset}]")
+                else:
+                    operand_strs.append(f"[{operand.Reg}]")
+            elif operand.IsReg:
+                operand_strs.append(f"{operand.Reg}.{operand._Suffix}" if operand._Suffix else operand.Reg)
+            elif operand.IsArg:
+                operand_strs.append(f"c[0x0][0x{operand.ArgOffset:x}]")
+            elif operand.IsSpecialReg:
+                operand_strs.append(operand.Name)
+            elif operand.IsImmediate:
+                operand_strs.append(hex(operand.ImmediateValue))
+            else:
+                operand_strs.append(operand.Name if operand.Name else "<??>")
+
+        if self.IsPredicateReg(self.opcodes[0]):
+            content = f"{self.opcodes[0]} {'.'.join(self.opcodes[1:])} {' '.join(operand_strs)}"
+        else:
+            content = f"{'.'.join(self.opcodes)} {' '.join(operand_strs)}"
+
+        return content
+
     def IsPredicateReg(self, opcode):
         if opcode[0] == 'P' and opcode[1].isdigit():
             return True
@@ -263,10 +289,17 @@ class Instruction:
         def _get_val(op, name=""):
             if op.IsZeroReg:
                 return lifter.ir.Constant(op.GetIRType(lifter), 0)
-            elif op.IsPT:
+            if op.IsPT:
                 return lifter.ir.Constant(op.GetIRType(lifter), 1)
-            elif op.IsReg:
-                return IRRegs[op.GetIRRegName(lifter)]
+            if op.IsReg:
+                val = IRRegs[op.GetIRRegName(lifter)]
+                if op.IsNegativeReg:
+                    val = IRBuilder.neg(val, f"{name}_neg")
+                if op.IsNotReg:
+                    val = IRBuilder.not_(val, f"{name}_not")
+                if op.IsAbsReg:
+                    raise UnsupportedInstructionException(f"Absolute registers not yet supported")
+                return val
             if op.IsArg:
                 return IRArgs[op.ArgOffset]
             if op.IsImmediate:

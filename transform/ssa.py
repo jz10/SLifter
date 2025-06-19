@@ -193,14 +193,14 @@ class SSA(SaSSTransform):
     def CreateSinglePhiInstruction(self, basic_block, reg_name, phi_version, predecessor_versions):
         phi_operands = []
         
-        def_operand = Operand(phi_version, phi_version, "NOTYPE", 0, True, False, False)
+        def_operand = Operand(phi_version, phi_version, None, 0, True, False, False)
         phi_operands.append(def_operand)
         
         sorted_pred_versions = sorted(predecessor_versions, 
                                     key=lambda t: basic_block._preds.index(t[0]))
         
         for pred_bb, version in sorted_pred_versions:
-            use_operand = Operand(version, version, "NOTYPE", 0, True, False, False)
+            use_operand = Operand(version, version, None, 0, True, False, False)
             phi_operands.append(use_operand)
         
         incoming_versions = ' '.join([v for _, v in sorted_pred_versions])
@@ -220,24 +220,7 @@ class SSA(SaSSTransform):
             for inst in basic_block.instructions:
                 print(f"  Original: {inst._InstContent}")
                 
-                operand_strs = []
-                for operand in inst.operands:
-                    if operand.IsMemAddr:
-                        if operand._MemAddrOffset:
-                            operand_strs.append(f"[{operand.Reg}+{operand._MemAddrOffset}]")
-                        else:
-                            operand_strs.append(f"[{operand.Reg}]")
-                    elif operand.IsReg:
-                        operand_strs.append(operand.Reg)
-                    elif operand.IsArg:
-                        operand_strs.append(f"c[0x0][0x{operand.ArgOffset:x}]")
-                    elif operand.IsSpecialReg:
-                        operand_strs.append(operand.Name)
-                    else:
-                        operand_strs.append(operand.Name if operand.Name else "<??>")
-                
-                transformed = f"{'.'.join(inst.opcodes)} {' '.join(operand_strs)}"
-                print(f"  Transformed: {transformed}")
+                print(f"  Transformed: {inst}")
                 print()
         print("=== End of renamed instructions ===\n")
 
@@ -275,20 +258,4 @@ class SSA(SaSSTransform):
     def UpdateInstContent(self, WorkList):
         for basic_block in WorkList:
             for inst in basic_block.instructions:
-                operand_strs = []
-                for operand in inst.operands:
-                    if operand.IsMemAddr:
-                        if operand._MemAddrOffset:
-                            operand_strs.append(f"[{operand.Reg}+{operand._MemAddrOffset}]")
-                        else:
-                            operand_strs.append(f"[{operand.Reg}]")
-                    elif operand.IsReg:
-                        operand_strs.append(operand.Reg)
-                    elif operand.IsArg:
-                        operand_strs.append(f"c[0x0][0x{operand.ArgOffset:x}]")
-                    elif operand.IsSpecialReg:
-                        operand_strs.append(operand.Name)
-                    else:
-                        operand_strs.append(operand.Name if operand.Name else "<??>")
-                
-                inst._InstContent = f"{'.'.join(inst.opcodes)} {' '.join(operand_strs)}"
+                inst._InstContent = inst.__str__()

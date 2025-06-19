@@ -25,12 +25,26 @@ class Operand:
         self._IsImmediate = IsImmediate
         self._ImmediateValue = ImmediateValue
         self._Skipped = False
+        self._NegativeReg = False
+        self._NotReg = False
+        self._AbsReg = False
         
         self._TypeDesc = "NOTYPE"
         self._IRType = None
         self._IRRegName = None
 
-        if Reg and '+' in Reg:
+        if Reg and Reg.startswith('-'):
+            # unary negation flag (e.g. -R7)
+            self._Reg = Reg[1:]
+            self._NegativeReg = True
+        elif Reg and Reg.startswith('~'):
+            # bitwise NOT flag (e.g. ~R7)
+            self._Reg = Reg[1:]
+            self._NotReg = True
+        elif Reg and Reg.startswith('|') and Reg.endswith('|'):
+            raise InvalidOperandException("Absolute registers not yet supported")
+        elif Reg and '+' in Reg:
+            # memory offset (e.g. R0+4)
             self._Reg = Reg.split('+')[0]
             self._MemAddrOffset = Reg.split('+')[1]
         else:
@@ -72,6 +86,18 @@ class Operand:
                               self._Name.startswith(SR_CTAID) or 
                               self._Name.startswith(SR_LANE) or 
                               self._Name.startswith(SR_WARP))
+    
+    @property
+    def IsNegativeReg(self):
+        return self._NegativeReg
+    
+    @property
+    def IsNotReg(self):
+        return self._NotReg
+
+    @property
+    def IsAbsReg(self):
+        return self._AbsReg
 
     @property
     def IsThreadIdx(self):

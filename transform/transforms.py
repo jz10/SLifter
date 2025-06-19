@@ -28,5 +28,27 @@ class Transforms:
         self.passes.append(TypeAnalysis("type analysis"))
 
     def apply(self, module):
+
+        # print instructions
+        for func in module.functions:
+            print(f"Function: {func.name}")
+            for block in func.blocks:
+                print(f"  Block: {block.addr_content}")
+                for inst in block.instructions:
+                    print(f"    {inst}")
+            print("")
+
+            
         for tranpass in self.passes:
             tranpass.apply(module)
+
+        # print instructions
+        for func in module.functions:
+            print(f"Function: {func.name}")
+            for block in func.blocks:
+                print(f"  Block: {block.addr_content}")
+                for inst in block.instructions:
+                    print(f"    {inst}")
+            print("")
+
+        print("done")

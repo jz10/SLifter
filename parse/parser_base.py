@@ -5,6 +5,7 @@ from sir.controlcode import ControlCode
 from sir.defuse import DefUse
 from sir.operand import Operand
 from sir.operand import InvalidOperandException
+import re
 
 class NoParsingEffort(Exception):
     pass
@@ -63,6 +64,9 @@ class SaSSParserBase:
             modified_lines.append(line)
 
         lines = modified_lines
+
+        # Code rearrange: if line ISETP Pn is not followed by @Pn, move the line until it is
+        lines = self.rearrange_isetp_lines(lines)
 
         # Main loop that parse the SaSS text file
         for line_num, line in enumerate(lines):
@@ -228,14 +232,14 @@ class SaSSParserBase:
             Operand_Content = Operand_Content.replace(PTR_SUFFIX, "")
             IsMemAddr = True
             
-        # Check if it is a register
-        if Operand_Content.find(REG_PREFIX) == 0: # operand starts from 'R' 
+        # Check if it is a register (including -, ~, or abs '|' as prefix)
+        if Operand_Content.startswith(REG_PREFIX) or Operand_Content.startswith('-') or Operand_Content.startswith('~') or Operand_Content.startswith('|'):
             IsReg = True
             Reg = Operand_Content
             Name = Operand_Content
             
             # Get the suffix of given operand
-            items = Operand_Content.split('.')
+            items = Reg.split('.')
             if len(items) > 1:
                 Reg = items[0]
                 Suffix = items[1]
@@ -394,3 +398,37 @@ class SaSSParserBase:
             # Get def and put on current defs table
 
             #Inst.controlcode.dump()
+    def rearrange_isetp_lines(self, lines):
+        isetp_pattern = r'/\*[0-9a-fA-F]+\*/\s+ISETP\.[A-Z.]+\s+([P]\d+),'
+        predicate_usage_pattern = r'/\*[0-9a-fA-F]+\*/\s+@([P]\d+|![P]\d+)\s+'
+        
+        rearranged_lines = []
+        isetp_instructions = {}
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            isetp_match = re.search(isetp_pattern, line)
+            if isetp_match:
+                predicate = isetp_match.group(1)
+
+                isetp_instructions[predicate] = (i, line)
+                i += 1
+                continue
+            
+            predicate_match = re.search(predicate_usage_pattern, line)
+            if predicate_match:
+                used_predicate = predicate_match.group(1)
+                if used_predicate.startswith('!'):
+                    used_predicate = used_predicate[1:]
+                
+                if used_predicate in isetp_instructions:
+                    stored_line_index, stored_line = isetp_instructions[used_predicate]
+                    rearranged_lines.append(stored_line)
+                    del isetp_instructions[used_predicate]
+            
+            rearranged_lines.append(line)
+            i += 1
+        
+        return rearranged_lines
