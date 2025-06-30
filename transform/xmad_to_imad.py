@@ -2,27 +2,27 @@ from transform.transform import SaSSTransform
 from sir.operand import Operand
 from sir.instruction import Instruction
 
-class XmadToMul64(SaSSTransform):
+class XmadToImad(SaSSTransform):
     def apply(self, module):
-        print("=== Start of XmadToMul64 ===")
+        print("=== Start of XmadToImad ===")
         count1 = 0
         count2 = 0
 
         for func in module.functions:
             for block in func.blocks:
                 patterns1 = self.find_patterns_1(block.instructions)
-                self.replace_xmad_with_mul64_1(block.instructions, patterns1)
+                self.replace_xmad_with_imad_1(block.instructions, patterns1)
                 count1 += len(patterns1)
 
         for func in module.functions:
             for block in func.blocks:
                 patterns2 = self.find_patterns_2(block.instructions)
-                self.replace_xmad_with_mul64_2(block.instructions, patterns2)
+                self.replace_xmad_with_imad_2(block.instructions, patterns2)
                 count2 += len(patterns2)
 
-        print(f"Transformed {count1} set of xmad instructions (pattern 1) to mul64 instructions.")
-        print(f"Transformed {count2} set of xmad instructions (pattern 2) to mul64 instructions.")
-        print("=== End of XmadToMul64 ===")
+        print(f"Transformed {count1} set of xmad instructions (pattern 1) to imad instructions.")
+        print(f"Transformed {count2} set of xmad instructions (pattern 2) to imad instructions.")
+        print("=== End of XmadToImad ===")
             
     def find_patterns_1(self, instructions):
         candidates1 = {}
@@ -65,7 +65,7 @@ class XmadToMul64(SaSSTransform):
         
         return patterns
 
-    def replace_xmad_with_mul64_1(self, instructions, patterns):
+    def replace_xmad_with_imad_1(self, instructions, patterns):
         # Sort patterns by earliest instruction index to process in order
         sorted_patterns = sorted(patterns.items(), key=lambda x: min(x[1]))
         
@@ -83,13 +83,13 @@ class XmadToMul64(SaSSTransform):
                 multiplicand1 = instr1.operands[1]
                 multiplicand2 = instr1.operands[2]
                 
-                # Get addend from second instruction for IMAD.WIDE
+                # Get addend from second instruction for IMAD
                 # First instruction should always have addend as RZ
                 imad_addend = Operand("RZ", "RZ", None, None, True, False, False)
                 if len(instr2.operands) > 3 and instr2.operands[3].Reg != "RZ":
                     imad_addend = instr2.operands[3]
                 
-                # Create IMAD.WIDE instruction with second instruction's addend
+                # Create IMAD instruction with second instruction's addend
                 imad_operands = [
                     Operand(def_reg, def_reg, None, None, True, False, False),
                     multiplicand1,
@@ -97,11 +97,11 @@ class XmadToMul64(SaSSTransform):
                     imad_addend
                 ]
                 
-                imad_inst_content = f"IMAD.WIDE {def_reg}, {multiplicand1.Name}, {multiplicand2.Name}, {imad_addend.Name}"
+                imad_inst_content = f"IMAD {def_reg}, {multiplicand1.Name}, {multiplicand2.Name}, {imad_addend.Name}"
                 
                 imad_instr = Instruction(
-                    id=f"imad_wide_{def_reg}",
-                    opcodes=["IMAD", "WIDE"],
+                    id=f"imad_{def_reg}",
+                    opcodes=["IMAD"],
                     operands=imad_operands,
                     inst_content=imad_inst_content
                 )
@@ -111,7 +111,7 @@ class XmadToMul64(SaSSTransform):
                 idx2 = next(i for i, instr in enumerate(instructions) if instr.id == i2)
                 idx3 = next(i for i, instr in enumerate(instructions) if instr.id == i3)
                 
-                # Insert IMAD.WIDE at earliest instruction location
+                # Insert IMAD at earliest instruction location
                 earliest_idx = min(idx1, idx2, idx3)
                 instructions.insert(earliest_idx, imad_instr)
                 
@@ -169,7 +169,7 @@ class XmadToMul64(SaSSTransform):
         
         return patterns
 
-    def replace_xmad_with_mul64_2(self, instructions, patterns):
+    def replace_xmad_with_imad_2(self, instructions, patterns):
         # Sort patterns by earliest instruction index to process in order
         sorted_patterns = sorted(patterns.items(), key=lambda x: min(x[1]))
         
@@ -189,7 +189,7 @@ class XmadToMul64(SaSSTransform):
                 multiplicand1 = instr1.operands[1]
                 multiplicand2 = instr1.operands[2]
                 
-                # Create IMAD.WIDE instruction for 64-bit multiplication
+                # Create IMAD instruction for 16-bit to 32-bit multiplication
                 imad_operands = [
                     Operand(def_reg, def_reg, None, None, True, False, False),
                     multiplicand1,
@@ -197,11 +197,11 @@ class XmadToMul64(SaSSTransform):
                     Operand("RZ", "RZ", None, None, True, False, False)
                 ]
                 
-                imad_inst_content = f"IMAD.WIDE {def_reg}, {multiplicand1.Name}, {multiplicand2.Name}, RZ"
+                imad_inst_content = f"IMAD {def_reg}, {multiplicand1.Name}, {multiplicand2.Name}, RZ"
                 
                 imad_instr = Instruction(
-                    id=f"imad_wide_64_{def_reg}",
-                    opcodes=["IMAD", "WIDE"],
+                    id=f"imad_{def_reg}",
+                    opcodes=["IMAD"],
                     operands=imad_operands,
                     inst_content=imad_inst_content
                 )
@@ -213,7 +213,7 @@ class XmadToMul64(SaSSTransform):
                 idx4 = next(i for i, instr in enumerate(instructions) if instr.id == i4)
                 idx5 = next(i for i, instr in enumerate(instructions) if instr.id == i5)
                 
-                # Insert IMAD.WIDE at earliest instruction location
+                # Insert IMAD at earliest instruction location
                 earliest_idx = min(idx1, idx2, idx3, idx4, idx5)
                 instructions.insert(earliest_idx, imad_instr)
                 

@@ -1,5 +1,3 @@
-#include <cstdint>
-
 int g_thread_idx;
 int g_block_dim;
 int g_block_idx;

@@ -12,6 +12,16 @@ extern int g_block_idx;
 extern int g_lane_id;
 extern int g_warp_id;
 
+int const_mem[1024];
+
+
+enum : int {
+    SR_NTID_X     = 0x08,
+    SR_GRID_DIM_X = 0x14,
+    SR_CTAID_X    = 0x20,
+    SR_TID_X      = 0x2C
+};
+
 int main() {
     constexpr int N = 1024;
     constexpr int blockDim = 128;
@@ -28,11 +38,15 @@ int main() {
 
     for(int b = 0; b < gridDim; ++b) {
         for(int t = 0; t < blockDim; ++t) {
-            g_block_idx  = b;
-            g_block_dim  = blockDim;
-            g_thread_idx = t;
-            g_warp_id    = t / 32;
-            g_lane_id    = t % 32;
+            // g_block_idx  = b;
+            // g_block_dim  = blockDim;
+            // g_thread_idx = t;
+            // g_warp_id    = t / 32;
+            // g_lane_id    = t % 32;
+            const_mem[SR_NTID_X]     = blockDim;
+            const_mem[SR_GRID_DIM_X] = gridDim;
+            const_mem[SR_CTAID_X]    = b;
+            const_mem[SR_TID_X]      = t;
             _Z9vectorAddPKfS0_Pfi(
                 (uint64_t)A,
                 (uint64_t)B,

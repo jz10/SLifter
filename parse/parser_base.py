@@ -274,9 +274,6 @@ class SaSSParserBase:
             # Create argument operaand
             Arg = Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate)
 
-            # Register argument to function
-            CurrFunc.RegisterArg(ArgOffset, Arg)
-
             return Arg
         
         # Special zero register

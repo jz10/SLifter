@@ -2,6 +2,48 @@ from transform.transform import SaSSTransform
 from collections import deque
 
 class TypeAnalysis(SaSSTransform):
+    def __init__(self, name):
+        super().__init__(name)
+
+        # PROP means it is the same type as the other operands
+        # PROP_PTR means it is a pointer to the other operands
+        self.instructionTypeTable = {
+            "FADD": ["Float32", "Float32", "Float32", "NA", "NA"],
+            "S2R": ["Int32", "Int32", "Int32", "NA", "NA"],
+            "IMAD": ["Int32", "Int32", "Int32", "Int32", "NA"],
+            "IADD3": ["Int32", "Int32", "Int32", "Int32", "NA"],
+            "XMAD": ["Int32", "Int32", "Int32", "Int32", "NA"],
+            "IADD32I": ["Int32", "Int32", "NA", "NA", "NA"],
+            "MOV": ["Int32", "Int32", "NA", "NA", "NA"],
+            "IADD": ["Int32", "Int32", "Int32", "NA", "NA"],
+            "ISETP": ["Int1", "NA", "NA", "NA", "NA"],
+            "AND": ["PROP", "PROP", "PROP", "NA", "NA"],
+            "OR": ["PROP", "PROP", "PROP", "NA", "NA"],
+            "XOR": ["PROP", "PROP", "PROP", "NA", "NA"],
+            "NOT": ["PROP", "PROP", "PROP", "NA", "NA"],
+            "LOP": ["PROP", "PROP", "PROP", "NA", "NA"],
+            "SHL": ["PROP", "PROP", "PROP", "NA", "NA"],
+            "SHR": ["PROP", "PROP", "PROP", "NA", "NA"],
+            "LOP3": ["PROP", "PROP", "PROP", "PROP", "NA"],
+            "LDG": ["PROP", "PROP_PTR", "NA", "NA", "NA"],
+            "SULD": ["PROP", "PROP_PTR", "NA", "NA", "NA"],
+            "STG": ["PROP_PTR", "PROP", "NA", "NA", "NA"],
+            "SUST": ["PROP_PTR", "PROP", "NA", "NA", "NA"],
+            "PHI": ["PROP", "PROP", "PROP", "PROP", "NA"],
+            "F2I": ["Int32", "Float32", "NA", "NA", "NA"],
+            "I2F": ["Float32", "Int32", "NA", "NA", "NA"],
+            "INTTOPTR": ["PROP_PTR", "Int32", "NA", "NA", "NA"],
+            "NOP": ["NA", "NA", "NA", "NA", "NA"],
+            "EXIT": ["NA", "NA", "NA", "NA", "NA"],
+            "RET": ["NA", "NA", "NA", "NA", "NA"],
+            "SYNC": ["NA", "NA", "NA", "NA", "NA"],
+            "SSY": ["NA", "NA", "NA", "NA", "NA"],
+        }
+        
+        self.flagOverrideTable = {
+            "WIDE": ["Int64", "NA", "NA", "NA", "NA"]
+        }
+
     def apply(self, module):
         for func in module.functions:
             self.ProcessFunc(func)
@@ -10,7 +52,7 @@ class TypeAnalysis(SaSSTransform):
     def ProcessFunc(self, function):
         WorkList = self.TraverseCFG(function)
 
-        RegTypes = {}
+        OpTypes = {}
         print("=== Start of TypeAnalysis ===")
 
         Changed = True
@@ -31,15 +73,25 @@ class TypeAnalysis(SaSSTransform):
             Changed = False
 
             for BB in WorkList:
-                Changed |= self.ProcessBB(BB, RegTypes, False)
+                Changed |= self.ProcessBB(BB, OpTypes, False)
             
             for BB in reversed(WorkList):
-                Changed |= self.ProcessBB(BB, RegTypes, True)
+                Changed |= self.ProcessBB(BB, OpTypes, True)
 
             Iteration += 1
             if Iteration > 3:
                 print("Warning: TypeAnalysis exceeds 3 iterations, stopping")
                 break
+
+        # Apply types to instructions
+        for BB in WorkList:
+            for Inst in BB.instructions:
+                for Operand in Inst.operands:
+                    if Operand.Name in OpTypes:
+                        Operand._TypeDesc = OpTypes[Operand.Name]
+                    else:
+                        Operand._TypeDesc = "NOTYPE"
+
 
         for BB in WorkList:
             for Inst in BB.instructions:
@@ -82,8 +134,8 @@ class TypeAnalysis(SaSSTransform):
         print("}")
         
 
-    def ProcessBB(self, BB, RegTypes, Reversed):
-        CurrentState = RegTypes.copy()
+    def ProcessBB(self, BB, OpTypes, Reversed):
+        CurrentState = OpTypes.copy()
 
         if Reversed:
             Instructions = reversed(BB.instructions)
@@ -94,149 +146,65 @@ class TypeAnalysis(SaSSTransform):
             self.PropagateTypes(Inst, CurrentState)
         
         # self.printTypes(CurrentState)
-        Changed = (CurrentState != RegTypes)
-        RegTypes.update(CurrentState)          
+        Changed = (CurrentState != OpTypes)
+        OpTypes.update(CurrentState)          
 
         return Changed
 
-    def PropagateTypes(self, Inst, RegTypes):
-        # Get Inst opcode       
+    def PropagateTypes(self, Inst, OpTypes):
+        # Get Inst opcode
         idx = 0
-        if  Inst.IsPredicateReg(Inst._opcodes[idx]):
+        if Inst.IsPredicateReg(Inst._opcodes[idx]):
             idx += 1
         op = Inst._opcodes[idx]
 
-        FLOAT32_OPS = {
-            "FADD"
-        }
-
-        INT32_OPS = {
-            "S2R", "IMAD", "IADD3", "XMAD", "IADD32I",
-            "MOV" # TODO: assume MOV is always int32?
-        }
-
-        # int32 or int64 depending on the operand
-        INT_OPS = {
-            "IADD", "ISETP",
-            "AND", "OR", "XOR", "NOT", "LOP", "LOP3",
-            "SHL", "SHR", 
-        }
-
-        LD_OPS = {
-            "LDG", "SULD"
-        }
-
-        ST_OPS = {
-            "STG", "SUST"
-        }
-
-        CAST_OPS = {
-            "F2I", "I2F", "INTTOPTR"
-        }
-
-        SKIP_OPS = {
-            "NOP", "EXIT", "RET", "SYNC", "SSY"
-        }
-
-        # Force all operands to be float32
-        if op in FLOAT32_OPS:
-            for operand in Inst.operands:
-                operand.SetTypeDesc("Float32")
-                RegTypes[operand.Name] = operand.GetTypeDesc()
-
-        # Make operands have the same type, except for predicate registers(for ISETP)
-        elif op in INT_OPS:
-            type = None
-            for operand in Inst.operands:
-                if operand.GetTypeDesc() != "NOTYPE" and not Inst.IsPredicateReg(operand.Name):
-                    if type is None:
-                        if type is not None and type != operand.GetTypeDesc():
-                            print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {type}")
-                        type = operand.GetTypeDesc()
-
-            if type is not None:
-                for operand in Inst.operands:
-                    if not Inst.IsPredicateReg(operand.Name):
-                        operand.SetTypeDesc(type)
-                        RegTypes[operand.Name] = operand.GetTypeDesc()
-                    
-            # Force all predicate registers to be int1          
-            for operand in Inst.operands:
-                if Inst.IsPredicateReg(operand.Name):
-                    if operand.GetTypeDesc() != "NOTYPE" and operand.GetTypeDesc() != "Int1":
-                        print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to i1")
-                    
-                    operand.SetTypeDesc("Int1")
-                    RegTypes[operand.Name] = operand.GetTypeDesc()
-
-        # Force all operands to be int32, except for definition operand if wide flag is set
-        elif op in INT32_OPS:
-            for operand in Inst.operands:
-                operand.SetTypeDesc("Int32")
-                RegTypes[operand.Name] = operand.GetTypeDesc()
-
-            Def = Inst.GetDef()
-            if Def is not None and len(Inst.opcodes) > 1 and Inst.opcodes[1] == "WIDE":
-                Def.SetTypeDesc("Int64")
-                RegTypes[Def.Name] = Def.GetTypeDesc()
+        if op not in self.instructionTypeTable:
+            print(f"Warning: Unhandled opcode {op} in {Inst._InstContent}")
+            return
         
-        # Guess ptr type from value type
-        elif op in LD_OPS:
-            val_type = Inst.operands[0].GetTypeDesc()
-            ptr_type = Inst.operands[1].GetTypeDesc()
+        # Static resolve types
+        propType = "NOTYPE"
+        for i, operand in enumerate(Inst.operands):
+            typeDesc = self.instructionTypeTable[op][i]
 
-            if val_type != "NOTYPE":
+            if typeDesc != "NA" and "PROP" not in typeDesc:
 
-                if ptr_type != "NOTYPE" and ptr_type != val_type + "_PTR":
-                    print(f"Warning: Type mismatch in {Inst._InstContent}: ptr overwriting from {ptr_type} to {val_type}_PTR")
+                if operand.Name in OpTypes and OpTypes[operand.Name] != typeDesc:
+                    print(f"Warning: Type mismatch for {operand._Name} in {Inst._InstContent}: {OpTypes[operand.Name]} vs {typeDesc}")
 
-                Inst.operands[1].SetTypeDesc(val_type + "_PTR")
-                RegTypes[Inst.operands[1].Name] = Inst.operands[1].GetTypeDesc()
+                OpTypes[operand.Name] = typeDesc
 
-        elif op in ST_OPS:
-            ptr_type = Inst.operands[0].GetTypeDesc()
-            val_type = Inst.operands[1].GetTypeDesc()
+        # Find propagate type
+        for i, operand in enumerate(Inst.operands):
+            typeDesc = self.instructionTypeTable[op][i]
 
-            if val_type != "NOTYPE":
+            if typeDesc == "PROP":
+                if operand.Name in OpTypes:
+                    if propType != "NOTYPE" and OpTypes[operand.Name] != propType:
+                        print(f"Warning: Propagation type mismatch for {operand._Name} in {Inst._InstContent}: {OpTypes[operand.Name]} vs {propType}")
+                        
+                    propType = OpTypes[operand.Name]
 
-                if ptr_type != "NOTYPE" and ptr_type != val_type + "_PTR":
-                    print(f"Warning: Type mismatch in {Inst._InstContent}: ptr overwriting from {ptr_type} to {val_type}_PTR")
+        # Propagate types
+        if propType != "NOTYPE":
+            for i, operand in enumerate(Inst.operands):
+                typeDesc = self.instructionTypeTable[op][i]
 
-                Inst.operands[0].SetTypeDesc(val_type + "_PTR")
-                RegTypes[Inst.operands[0].Name] = Inst.operands[0].GetTypeDesc()
+                if typeDesc == "PROP":
+                    OpTypes[operand.Name] = propType
+                elif typeDesc == "PROP_PTR":
+                    OpTypes[operand.Name] = propType + "_PTR"
 
-        elif op == "PHI":
-            # We want operands to have the same type
-            type = None
-            for operand in Inst.operands:
-                if operand.GetTypeDesc() != "NOTYPE":
-                    if type is None:
-                        type = operand.GetTypeDesc()
-                    elif type != operand.GetTypeDesc():
-                        print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {type}")
-            
-            if type is not None:
-                for operand in Inst.operands:
-                    operand.SetTypeDesc(type)
-                    RegTypes[operand.Name] = operand.GetTypeDesc()
+        # Flag overrides
+        for i, opcode in enumerate(Inst.opcodes):
+            if opcode in self.flagOverrideTable:
+                for j, operand in enumerate(Inst.operands):
+                    if self.flagOverrideTable[opcode][j] != "NA":
+                        OpTypes[operand.Name] = self.flagOverrideTable[opcode][j]
 
-        elif op in CAST_OPS:
-            if op == "F2I":
-                Inst.operands[0].SetTypeDesc("Float32")
-            elif op == "I2F":
-                Inst.operands[0].SetTypeDesc("Int32")
-            elif op == "INTTOPTR":
-                if Inst.operands[0].GetTypeDesc() != "NOTYPE" and Inst.operands[0].GetTypeDesc() != "Int32":
-                    print(f"Warning: Type mismatch in {Inst._InstContent}: {Inst.operands[0].Name} type overwriting from {Inst.operands[0].GetTypeDesc()} to Int32")
-                Inst.operands[0].SetTypeDesc("Int32")
-                RegTypes[Inst.operands[0].Name] = Inst.operands[0].GetTypeDesc()
-        else:
-            if op not in SKIP_OPS:
-                print(f"Warning: Unhandled opcode {op} in {Inst._InstContent}")
-        
-        for operand in Inst.operands:
-            if operand.Name in RegTypes:
-                if operand.GetTypeDesc() != "NOTYPE" and operand.GetTypeDesc() != RegTypes[operand.Name]:
-                    print(f"Warning: Type mismatch in {Inst._InstContent}: {operand.Name} type overwriting from {operand.GetTypeDesc()} to {RegTypes[operand.Name]}")
-                
-                operand.SetTypeDesc(RegTypes[operand.Name])
+        # Operand overrides
+        for i, operand in enumerate(Inst.operands):
+            if operand.Name == "PT":
+                OpTypes[operand.Name] = "Int1"
+            elif operand.IsArg:
+                OpTypes[operand.Name] = "Int32"

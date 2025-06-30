@@ -1,6 +1,8 @@
 from sir.basicblock import BasicBlock
 from sir.instruction import Instruction
 from lift.lifter import Lifter
+from llvmlite import ir
+from transform.sr_substitute import SR_TO_OFFSET
 
 ARG_OFFSET = 320 # 0x140
 
@@ -26,24 +28,28 @@ class Function:
             args, regs = inst.GetArgsAndRegs()
             self.args.extend(args)
             self.regs.extend(regs)
-
-    # Register argument with offset
-    def RegisterArg(self, Offset, Arg):
-        self.ArgMap[Offset] = Arg
         
     # Get the arguments for current function
     def GetArgs(self):
         ArgIdxes = []
         Args = []
+
+        ArgMap = {}
+        # Collect the arguments
+        for BB in self.blocks:
+            for inst in BB.instructions:
+                    for Operand in inst.operands:
+                        if Operand.IsArg:
+                            Offset = Operand.ArgOffset
+                            ArgMap[Offset] = Operand
+
         # Sort the map
         SortedArgs = {key: val for key, val in
-                      sorted(self.ArgMap.items(), key = lambda ele: ele[0])}
+                      sorted(ArgMap.items(), key = lambda ele: ele[0])}
 
         # Collect the keys
         for Offset, Operand in SortedArgs.items():
-            if Offset < ARG_OFFSET:
-                continue
-            elif Operand.Skipped: # This is the case that the operand may be the associated operand
+            if Operand.Skipped: # This is the case that the operand may be the associated operand
                 continue
             else:
                 ArgIdxes.append(Offset)
@@ -85,24 +91,33 @@ class Function:
             
     # Lift to LLVM IR
     def Lift(self, lifter, llvm_module, func_name):
-        ArgTypes = []
         # Collect arguments
         ArgIdxes, Args = self.GetArgs()
-        # Get arg types
-        for Arg in Args:
-            ArgTypes.append(Arg.GetIRType(lifter))
         
-        FuncTy = lifter.ir.FunctionType(lifter.ir.VoidType(), ArgTypes)
+        
+        FuncTy = lifter.ir.FunctionType(lifter.ir.VoidType(), [])
         IRFunc = lifter.ir.Function(llvm_module, FuncTy, self.name)
 
         # Construct the map based on IR basic block
         self.BuildBBToIRMap(IRFunc, self.BlockMap)
+
+        # Preload the constant memory values
+        ConstMem = {}
+        EntryBlock = self.BlockMap[self.blocks[0]]
+        Builder = lifter.ir.IRBuilder(EntryBlock)
+        Builder.position_at_start(EntryBlock)
         
-        # SSA mapping: SIR argument versions to LLVM IR values (memory operands)
-        IRArgs = {}
-        # Map all function arguments into IRArgs so they are available in every block
-        for arg_id, _ in enumerate(Args):
-            IRArgs[ArgIdxes[arg_id]] = IRFunc.args[arg_id]
+        OFFSET_TO_SR = {v: k for k, v in SR_TO_OFFSET.items()}
+
+        for entry in Args:
+            addr = Builder.gep(lifter.ConstMem, [ir.Constant(ir.IntType(32), 0), 
+                                                 ir.Constant(ir.IntType(32), entry.ArgOffset)])
+            if entry.ArgOffset in OFFSET_TO_SR:
+                name = OFFSET_TO_SR[entry.ArgOffset]
+            else:
+                name = f"c[0x0][{hex(entry.ArgOffset)}]"
+            val = Builder.load(addr, name)
+            ConstMem[entry.ArgOffset] = val
 
         # SSA mapping: register names to LLVM IR values
         IRRegs = {}
@@ -111,6 +126,6 @@ class Function:
         for BB in self.blocks:
             IRBlock = self.BlockMap[BB]
             Builder = lifter.ir.IRBuilder(IRBlock)
-            BB.Lift(lifter, Builder, IRRegs, IRArgs, self.BlockMap)
+            BB.Lift(lifter, Builder, IRRegs, self.BlockMap, ConstMem)
 
         

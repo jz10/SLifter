@@ -3,6 +3,8 @@ from sir.controlcode import ControlCode
 from sir.controlcode import PresetCtlCodeException
 from llvmlite import ir
 
+ARG_OFFSET = 320 # 0x140
+
 class UnsupportedOperatorException(Exception):
     pass
 
@@ -193,27 +195,6 @@ class Instruction:
             return Operand.Name
         else:
             return None
-        
-    # Check and update the use operand's type from the givenn operand
-    def CheckAndUpdateUseType(self, Def):
-        for i in range(1, len(self._operands)):
-            CurrOperand = self._operands[i]
-            if CurrOperand.Name == Def.Name:                
-                CurrOperand.SetTypeDesc(Def.TypeDesc)
-                return True
-
-        return False
-    
-    # Check and update the def operand's type from the given operands
-    def CheckAndUpdateDefType(self, Uses):
-        Def = self._operands[0]
-        for i in range(len(Uses)):
-            CurrUse = Uses[i]
-            if CurrUse.IsReg and Def.IsReg and CurrUse.Reg == Def.Reg: # CurrUse.Name == Def.Name:
-                Def.SetTypeDesc(CurrUse.TypeDesc)
-                return True
-
-        return False
     
     def __str__(self):
         operand_strs = []
@@ -280,7 +261,7 @@ class Instruction:
         return 0x3c  # Default fallback
 
 
-    def Lift(self, lifter, IRBuilder: ir.IRBuilder, IRRegs, IRArgs):
+    def Lift(self, lifter, IRBuilder: ir.IRBuilder, IRRegs, ConstMem):
         Idx = 0
         if self.IsPredicateReg(self._opcodes[Idx]):
             Idx += 1
@@ -301,7 +282,7 @@ class Instruction:
                     raise UnsupportedInstructionException(f"Absolute registers not yet supported")
                 return val
             if op.IsArg:
-                return IRArgs[op.ArgOffset]
+                    return ConstMem[op.ArgOffset]
             if op.IsImmediate:
                 return lifter.ir.Constant(op.GetIRType(lifter), op.ImmediateValue)
             raise UnsupportedInstructionException(f"Unsupported operand type: {op}")
@@ -309,9 +290,9 @@ class Instruction:
         if opcode == "MOV":
             dest, src = self._operands[0], self._operands[1]
 
-            if src.IsArg and IRArgs.get(src.ArgOffset) is None:
-                print(f"Warning: MOV source argument {src.ArgOffset} is not defined.")
-                return
+            # if src.IsArg and IRArgs.get(src.ArgOffset) is None:
+            #     print(f"Warning: MOV source argument {src.ArgOffset} is not defined.")
+            #     return
 
             val = _get_val(src, "mov")
             IRRegs[dest.GetIRRegName(lifter)] = val
@@ -461,9 +442,9 @@ class Instruction:
             Op2 = self._operands[2]
 
             if Op1.IsReg and Op2.IsArg:
-                IRRes = IRRegs[ResOp.GetIRRegName(lifter)];
+                IRRes = IRRegs[ResOp.GetIRRegName(lifter)]
                 IROp1 = IRRegs[Op1.GetIRRegName(lifter)]
-                IROp2 = IRArgs[Op2.ArgOffset]
+                IROp2 = ConstMem[Op2.ArgOffset]
 
                 # Load values
                 Indices = []
@@ -849,17 +830,24 @@ class Instruction:
             raise UnsupportedInstructionException 
 
     # Lift branch instruction
-    def LiftBranch(self, lifter, IRBuilder, IRRegs, IRArgs, TrueBr, FalseBr):
+    def LiftBranch(self, lifter, IRBuilder, IRRegs, TrueBr, FalseBr, ConstMem):
 
         def _get_val(op, name=""):
             if op.IsZeroReg:
                 return lifter.ir.Constant(op.GetIRType(lifter), 0)
-            elif op.IsPT:
+            if op.IsPT:
                 return lifter.ir.Constant(op.GetIRType(lifter), 1)
-            elif op.IsReg:
-                return IRRegs[op.GetIRRegName(lifter)]
+            if op.IsReg:
+                val = IRRegs[op.GetIRRegName(lifter)]
+                if op.IsNegativeReg:
+                    val = IRBuilder.neg(val, f"{name}_neg")
+                if op.IsNotReg:
+                    val = IRBuilder.not_(val, f"{name}_not")
+                if op.IsAbsReg:
+                    raise UnsupportedInstructionException(f"Absolute registers not yet supported")
+                return val
             if op.IsArg:
-                return IRArgs[op.ArgOffset]
+                    return ConstMem[op.ArgOffset]
             if op.IsImmediate:
                 return lifter.ir.Constant(op.GetIRType(lifter), op.ImmediateValue)
             raise UnsupportedInstructionException(f"Unsupported operand type: {op}")

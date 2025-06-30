@@ -141,7 +141,7 @@ class BasicBlock:
 
         return None
     
-    def Lift(self, lifter, IRBuilder, IRRegs, IRArgs, BlockMap):
+    def Lift(self, lifter, IRBuilder, IRRegs, BlockMap, ConstMem):
         # Handle SSA PHI instructions at the top of the block
         idx = 0
         while idx < len(self.instructions) and self.instructions[idx].opcodes[:1] == ["PHI"]:
@@ -152,7 +152,7 @@ class BasicBlock:
             # Incoming operands correspond to predecessors in order
             for i, use_op in enumerate(phi_inst.operands[1:]):
                 pred_bb = self._preds[i]
-                incoming = IRRegs.get(use_op.GetIRRegName(lifter)) if use_op.IsReg else IRArgs.get(use_op.ArgOffset)
+                incoming = IRRegs.get(use_op.GetIRRegName(lifter)) if use_op.IsReg else ConstMem.get(use_op.ArgOffset)
                 phi_val.add_incoming(incoming, BlockMap[pred_bb])
             IRRegs[def_op.GetIRRegName(lifter)] = phi_val
             idx += 1
@@ -164,15 +164,15 @@ class BasicBlock:
                 true_br = self.GetTrueBranch(inst)
                 false_br = self.GetFalseBranch(inst)
                 try:
-                    inst.LiftBranch(lifter, IRBuilder, IRRegs, IRArgs, BlockMap[true_br], BlockMap[false_br])
+                    inst.LiftBranch(lifter, IRBuilder, IRRegs, BlockMap[true_br], BlockMap[false_br], ConstMem)
                 except Exception as e:
                     lifter.lift_errors.append(e)
                 break
-            inst.Lift(lifter, IRBuilder, IRRegs, IRArgs)
+            inst.Lift(lifter, IRBuilder, IRRegs, ConstMem)
 
     def dump(self):
         print("BB Addr: ", self.addr_content)
         for inst in self.instructions:
-            inst.dump();
+            inst.dump()
         print("BB End-------------")
         
