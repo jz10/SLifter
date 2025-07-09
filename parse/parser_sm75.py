@@ -53,7 +53,7 @@ class SaSSParser_SM75(SaSSParserBase):
 
                     # Create new function
                     CurrFunc = Function(items[1])
-                    Funcs.append(CurrFunc)
+                    Funcs.append(CurrFunc);
                     
                     # Setup the flags that for parsing function
                     IsParsingFunc = True
@@ -68,7 +68,7 @@ class SaSSParser_SM75(SaSSParserBase):
                 # Parse the control code
                 CurrCtrCodes = self.ParseControlCode(items[0])
                 
-                continue
+                continue;
             elif len(items) == 3 and not IsParsingBB:
                 # Set the flag to start a new basic block 
                 IsParsingBB = True

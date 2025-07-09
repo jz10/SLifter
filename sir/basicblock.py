@@ -15,7 +15,15 @@ class BasicBlock:
         self._succs = []
         # Path flag
         self._PFlag = pflag
-
+        # Direct uses
+        self._DirectUses = {}
+        # Direct defs
+        self._DirectDefs = {}
+        # Indirect uses
+        self._IndirectUses = {}
+        # Indirect defs
+        self._IndirectDefs = {}
+        
     @property
     def PFlag(self):
         return self._PFlag
@@ -140,7 +148,7 @@ class BasicBlock:
                 return BB
 
         return None
-    
+        
     def Lift(self, lifter, IRBuilder, IRRegs, IRArgs, BlockMap, IRFunc):
         for i in range(len(self.instructions)):
             Inst = self.instructions[i]

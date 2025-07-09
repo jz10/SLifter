@@ -9,7 +9,7 @@ class SaSSParser:
     def __init__(self, file):
         # Retrieve ISA
         isa = self.get_isa(file)
-        # print("parse ", isa)
+        print("parse ", isa)
 
         self.file = file
         if isa == "sm_52":
@@ -19,7 +19,7 @@ class SaSSParser:
         elif isa == "sm_75":
             self.parser = SaSSParser_SM75(isa, file)
         else:
-            raise InvalidISAException
+            raise InvalideISAException
             
     # Retrieve ISA definition
     def get_isa(self, file):
