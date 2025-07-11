@@ -54,7 +54,7 @@ class DefUse:
         # Build global def-use via propagating indirect defs and uses
         worklist = list(Blocks)
         while length(worklist) != 0:
-            // Popup 1st element
+            # Popup 1st element
             BB = worklist[0]
             del(worklist[0])
         
