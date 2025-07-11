@@ -1,141 +1,53 @@
 from transform.transform import SaSSTransform
+from collections import deque
 
 class OperAggregate(SaSSTransform):
     # Apply operator aggregation on module 
     def apply(self, module):
-        TwinIdxes = []
-        
         for func in module.functions:
-            # Identify the twin-index calculation
-            self.IdentifyTwinIdx(func, TwinIdxes)
-
-            # Identify the twin-binary operation
-            self.IdentifyTwinBin(func, TwinIdxes)
+            SeedInsts = self.GetPack64Instructions(func)
             
-    # Identify the twin-index calculation amd merge the twin-idx related instructions
-    def IdentifyTwinIdx(self, func, TwinIdxes):
+            for Inst in SeedInsts:
+                self.MergeInstructionPairs(Inst)
+            
+    def GetPack64Instructions(self, func):
         for bb in func.blocks:
-            Insts = bb.instructions
-            # The translated instructions
-            TransInsts = []
-            # The skipped instructions
-            SkipInsts = []
+            Pack64Insts = []
+            for inst in bb.instructions:
+                if len(inst.opcodes) > 0 and inst.opcodes[0] == "PACK64":
+                    Pack64Insts.append(inst)
 
-            # Scan the instructions to identify the twin-index pattern
-            for i in range(len(Insts)):
-                Inst = Insts[i]
-                if Inst in SkipInsts:
-                    continue
-                
-                if i < len(Insts) - 1:
-                    TwinIdx = self.IsTwinIdxPattern(Inst, Insts[i + 1])
-                    if TwinIdx != None:
-                        TwinIdxes.append(TwinIdx)
-                        TransInsts.append(self.MutateTwinIdxInst(TwinIdx, Inst))
-                        # Set skip flag
-                        SkipInsts.append(Insts[i + 1])
-                        
-                        continue
-
-                if Inst.IsNOP():
-                    SkipInsts.append(Inst)
-                else:
-                    # Record the current instruction to translated instructions
-                    TransInsts.append(Inst)
-
-            for Inst in SkipInsts:
-                # Set opeands as skipped
-                Inst.SetSkip()
-                
-            # Reset the transformed instructions
-            bb.instructions = TransInsts
-            
-    def IsTwinIdxPattern(self, Inst, nextInst):
-        if Inst.opcodes[0] == "SHL":
-            if nextInst.opcodes[0] == "SHR":
-                return Inst.operands[0].Reg + "-" + nextInst.operands[0].Reg
-
-        return None
-
-    # Create the twin-index related pseudo-instruction
-    def MutateTwinIdxInst(self, TwinIdx, Inst):
-        Inst.TwinIdx = TwinIdx
-        return Inst
+        return Pack64Insts
     
-    # Identify the twin-binary operation
-    def IdentifyTwinBin(self, func, TwinIdxes):
-        for bb in func.blocks:
-            Insts = bb.instructions
-            # The transslated instructions 
-            TransInsts = []
-            # The skipped instructions
-            SkipInsts = []
+    def MergeInstructionPairs(self, inst):
+        
+        InstPair = (inst.getUsesInsts()[0], inst.getUsesInsts()[1])
 
-            # Scan the instructions to identify the twin-index pattern
-            for i in range(len(Insts)):
-                Inst = Insts[i]
-                if Inst in SkipInsts:
-                    continue
-                
-                if i < len(Insts) - 1 and Inst.IsAddrCompute():
-                    NextInst = Insts[i + 1]
-                    TwinIdx = self.IsTwinBinPattern(Inst, NextInst)
-                    if TwinIdx == None and i < len(Insts) - 2:
-                        NextInst = Insts[i + 2]
-                        TwinIdx = self.IsTwinBinPattern(Inst, NextInst)
+        RemoveInsts = set()
+        Queue = deque([InstPair])
 
-                    if TwinIdx != None and TwinIdx in TwinIdxes:
-                        TransInsts.append(self.MutateTwinBinInst(TwinIdx, Inst))
-                        # Set skip flag
-                        SkipInsts.append(NextInst)
-                        
-                        continue
-                        
-                # Record the current instruction to translated instructions
-                TransInsts.append(Inst)
+        while Queue:
+            CurrPair = Queue.popleft()
+            Inst1, Inst2 = CurrPair
 
-            # Set operands as skipped
-            for Inst in SkipInsts:
-                Inst.SetSkip()
-                
-            # Reset the transformed instructions
-            bb.instructions = TransInsts
+            if Inst1.opcodes[0] == "SHL" and Inst2.opcodes[0] == "SHR":
+                # First opcode SHL, second opcode SHR
+                # First use operand same register, second use operand sums up to 32
+                # (SHL R6, R0.reuse, 0x2 ; SHR R0, R0, 0x1e ;) => SHL R6, R0, 0x2
+                RemoveInsts.add(Inst2)
+                InstPair = (Inst1.getUsesInsts()[0], Inst2.getUsesInsts()[1])
+                Queue.append(InstPair)
+            if Inst1.opcodes[0] == "IADD" and Inst2.opcodes[0] == "IADD":
+                # First opcode IADD, second opcode IADD.X
+                # First use operand same register, second use operand offset difference is 4    
+                # (IADD R4.CC, R6.reuse, c[0x0][0x140] ; IADD.X R5, R0.reuse, c[0x0][0x144] ;) => IADD.WIDE R4, R6, c[0x0][0x140]
+                RemoveInsts.add(Inst2)
+                Inst1.opcodes = ["IADD", "WIDE"]
+                InstPair = (Inst1.getUsesInsts()[0], Inst2.getUsesInsts()[1])
+                Queue.append(InstPair)
 
-    def IsTwinBinPattern(self, Inst, nextInst):
-        # Check the match of operator
-        if Inst.opcodes[0] != nextInst.opcodes[0]:
-            return None
+        # Remove instructions
+        for inst in RemoveInsts:
+            inst.block.instructions.remove(inst)
 
-        if len(Inst.opcodes) != 1:
-            return None
-
-        # The twin idx instructions should be like:
-        # IADD ...
-        # IADD.X ...
-        if len(nextInst.opcodes) != 2 or nextInst.opcodes[1] != "X":
-            return None
-
-        # Check the function argument operands
-        if len(Inst.operands) != 3 or len(nextInst.operands) != 3:
-            return None
-
-        operand1 = Inst.operands[2]
-        operand2 = nextInst.operands[2]
-        # The last operand must be function argument and their offsets value have to be continuous
-        if not operand1.IsArg or not operand2.IsArg:
-            return None
-        if operand1.ArgOffset + 4 != operand2.ArgOffset:
-            return None
-
-        operand1 = Inst.operands[1]
-        operand2= nextInst.operands[1]
-        # The 2nd operand must be register operand
-        if operand1.IsReg and operand2.IsReg:
-            TwinIdx = operand1.Reg + "-" + operand2.Reg
-            return TwinIdx
-
-        return None
-
-    def MutateTwinBinInst(self, TwinIdx, Inst):
-        Inst.TwinIdx = TwinIdx
-        return Inst
+            

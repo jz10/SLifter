@@ -825,6 +825,16 @@ class Instruction:
                     
                     print(f"HMMA: Tensor core operation simplified - proper implementation needs WMMA intrinsics")
 
+        elif self._opcodes[Idx] == "PACK64":
+            dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
+            v1 = _get_val(op1)
+            v2 = _get_val(op2)
+            lo64 = IRBuilder.zext(v1, ir.IntType(64), "pack64_lo")
+            hi64 = IRBuilder.zext(v2, ir.IntType(64), "pack64_hi")
+            hiShift = IRBuilder.shl(hi64, ir.Constant(ir.IntType(64), 32), "pack64_hi_shift")
+            packed = IRBuilder.or_(lo64, hiShift, "pack64_result")
+            IRRegs[dest.GetIRRegName(lifter)] = packed
+
         else:
             print("lift instruction: ", self._opcodes[Idx])
             raise UnsupportedInstructionException 
@@ -873,3 +883,11 @@ class Instruction:
         print("inst: ", self._id, self._opcodes)
         for operand in self._operands:
             operand.dump()
+
+    def getUsesInsts(self):
+        """Returns a list of instructions defining the use operands"""
+        raise NotImplementedError("getUsesInsts not yet implemented")
+    
+    def getUserInsts(self):
+        """Returns a set of instructions using this instruction"""
+        raise NotImplementedError("getUserInsts not yet implemented")

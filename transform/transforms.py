@@ -4,16 +4,19 @@ from transform.ssa import SSA
 from transform.xmad_to_imad import XmadToImad
 from transform.sr_substitute import SRSubstitute
 from transform.inttoptr import IntToPtr
+from transform.pack64 import Pack64
 
 class Transforms:
     def __init__(self, name):
         self.name = name
         self.passes = []
 
+        # Add int32 to int64 pass
+        self.passes.append(Pack64("pack64"))
         # Add passes
         self.passes.append(SSA("SSA"))
         # Add operator aggregation pass
-        self.passes.append(OperAggregate("operator aggregation"))
+        # self.passes.append(OperAggregate("operator aggregation"))
         # Add special register substitution pass
         self.passes.append(SRSubstitute("SR Substitute"))
         # Add xmad to mul64 pass
