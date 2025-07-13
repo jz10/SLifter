@@ -371,6 +371,8 @@ class SaSSParserBase:
             BB.EraseRedundency()
             # BB.dump()
 
+        DefUse.BuildGlobalDU(Blocks)
+            
         return Blocks
     
     # Check if the target address is legal, then add the target address associated with its jump source
@@ -389,11 +391,8 @@ class SaSSParserBase:
         
         # Iterate through instructions
         #for Inst in Insts:
-            
             # Check the use and connect the defs
-            
             # Get def and put on current defs table
-
             #Inst.controlcode.dump()
     def rearrange_isetp_lines(self, lines):
         isetp_pattern = r'/\*[0-9a-fA-F]+\*/\s+ISETP\.[A-Z.]+\s+([P]\d+),'

@@ -15,7 +15,15 @@ class BasicBlock:
         self._succs = []
         # Path flag
         self._PFlag = pflag
-
+        # Direct uses
+        self._DirectUses = {}
+        # Direct defs
+        self._DirectDefs = {}
+        # Indirect uses
+        self._IndirectUses = {}
+        # Indirect defs
+        self._IndirectDefs = {}
+        
     @property
     def PFlag(self):
         return self._PFlag
