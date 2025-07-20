@@ -139,6 +139,12 @@ class Operand:
     def Skipped(self):
         return self._Skipped
     
+    def SetReg(self, RegName):
+        if not self.IsReg:
+            raise InvalidOperandException("Cannot set register for non-register operand")
+        self._Reg = RegName
+        self._Name = RegName
+
     # Set the type description for operand
     def SetTypeDesc(self, Ty):
         self._TypeDesc = Ty

@@ -5,6 +5,7 @@ from transform.xmad_to_imad import XmadToImad
 from transform.sr_substitute import SRSubstitute
 from transform.inttoptr import IntToPtr
 from transform.pack64 import Pack64
+from transform.defuse_analysis import DefUseAnalysis
 
 class Transforms:
     def __init__(self, name):
@@ -15,12 +16,16 @@ class Transforms:
         self.passes.append(Pack64("pack64"))
         # Add passes
         self.passes.append(SSA("SSA"))
-        # Add operator aggregation pass
-        # self.passes.append(OperAggregate("operator aggregation"))
         # Add special register substitution pass
         self.passes.append(SRSubstitute("SR Substitute"))
         # Add xmad to mul64 pass
         self.passes.append(XmadToImad("xmad to mul64"))
+        # Add passes
+        # self.passes.append(SSA("SSA"))
+        # Add def-use analysis pass
+        self.passes.append(DefUseAnalysis("def-use analysis"))
+        # Add operator aggregation pass
+        self.passes.append(OperAggregate("operator aggregation"))
         # Add SSA pass again
         self.passes.append(SSA("SSA"))
         # Add int to ptr pass

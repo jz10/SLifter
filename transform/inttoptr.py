@@ -5,6 +5,8 @@ from sir.operand import Operand
 
 class IntToPtr(SaSSTransform):
     def apply(self, module):
+        print("=== Start of IntToPtr Transformation ===")
+        count = 0
         for func in module.functions:
             for block in func.blocks:
                 new_insts = []
@@ -32,7 +34,11 @@ class IntToPtr(SaSSTransform):
                             inst_content=inst_content
                         )
                         new_insts.append(cast_inst)
+                        count += 1
 
                         inst.operands[ptr_idx] = dst_op
                     new_insts.append(inst)
                 block.instructions = new_insts
+
+        print(f"Total INTTOPTR instructions added: {count}")
+        print(f"=== End of IntToPtr Transformation ===")

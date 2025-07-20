@@ -35,12 +35,11 @@ class SSA(SaSSTransform):
 
         self.RemapRegisters(WorkList)
 
-        self.PrintRenamedInstructions(WorkList)
+        # self.PrintRenamedInstructions(WorkList)
 
         self.UpdateInstContent(WorkList)
 
         print("SSA done")
-        print()
         print("=== End of SSA ===")
 
     def TraverseCFG(self, function):
@@ -95,8 +94,6 @@ class SSA(SaSSTransform):
         Uses = Inst.GetUses()
 
         Def = Inst.GetDef()
-        if Def and Def.IsMemAddr:
-            Uses.append(Def)
 
         for Operand in Uses:
             if Operand.IsReg and Operand.Reg:
@@ -113,14 +110,9 @@ class SSA(SaSSTransform):
         if not Def or not Def.IsReg:
             return
         
-        # STG.E [R6], R0 => R6 is an use even it is at the first position
-        if Def.IsMemAddr:
-            RegName = self.ExtractBaseRegisterName(Def.Reg)
-            if RegName in CurrRegs:
-                Def._Name = CurrRegs[RegName]
-                Def._Reg = CurrRegs[RegName]
-            return
-        
+        if Inst.opcodes[0] == "PACK64":
+            print("debug point!")
+
         # Don't rename predicate registers or RZ register
         if Inst.IsPredicateReg(Def.Reg) or Def.Reg == "RZ":
             return
@@ -237,6 +229,10 @@ class SSA(SaSSTransform):
                             continue
                         
                         reg_name = operand.Reg
+
+                        if reg_name == "R6_int64@00e8":
+                            print("debug point!")
+
                         if reg_name not in register_mapping:
                             register_mapping[reg_name] = f"R{register_counter}"
                             register_counter += 1

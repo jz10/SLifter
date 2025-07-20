@@ -18,7 +18,6 @@ class Function:
         self.args = []
         self.ArgMap = {}
         self.BlockMap = {}
-        self.DefUse = None
 
     # Resovle instructions' operands
     def ResolveOperands(self, insts):
@@ -116,6 +115,9 @@ class Function:
                 name = OFFSET_TO_SR[entry.ArgOffset]
             else:
                 name = f"c[0x0][{hex(entry.ArgOffset)}]"
+
+            if entry.TypeDesc == "Int64":
+                addr = Builder.bitcast(addr, lifter.ir.PointerType(lifter.ir.IntType(64)))
             val = Builder.load(addr, name)
             ConstMem[entry.ArgOffset] = val
 

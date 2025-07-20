@@ -32,18 +32,23 @@ class TypeAnalysis(SaSSTransform):
             "PHI": ["PROP", "PROP", "PROP", "PROP", "NA"],
             "F2I": ["Int32", "Float32", "NA", "NA", "NA"],
             "I2F": ["Float32", "Int32", "NA", "NA", "NA"],
-            "INTTOPTR": ["PROP_PTR", "Int64", "NA", "NA", "NA"],
-            "PACK64": ["Int64", "Int32", "Int32", "NA", "NA"],
             "NOP": ["NA", "NA", "NA", "NA", "NA"],
             "EXIT": ["NA", "NA", "NA", "NA", "NA"],
             "RET": ["NA", "NA", "NA", "NA", "NA"],
             "SYNC": ["NA", "NA", "NA", "NA", "NA"],
             "SSY": ["NA", "NA", "NA", "NA", "NA"],
+
+            # Dummy instruction types
+            "INTTOPTR": ["PROP_PTR", "Int64", "NA", "NA", "NA"],
+            "PACK64": ["Int64", "Int32", "Int32", "NA", "NA"],
+            "CAST64": ["Int64", "Int32", "NA", "NA", "NA"],
+            "IADD64": ["Int64", "Int64", "Int64", "NA", "NA"],
+            "SHL64": ["Int64", "Int64", "Int64", "NA", "NA"]
         }
         
-        self.flagOverrideTable = {
-            "WIDE": ["Int64", "NA", "NA", "NA", "NA"]
-        }
+        # self.flagOverrideTable = {
+        #     "WIDE": ["Int64", "NA", "NA", "NA", "NA"]
+        # }
 
     def apply(self, module):
         for func in module.functions:
@@ -151,6 +156,22 @@ class TypeAnalysis(SaSSTransform):
         OpTypes.update(CurrentState)          
 
         return Changed
+    
+    def ResolveType(self, Inst, i):
+        op = Inst.opcodes[0] 
+        typeDesc = self.instructionTypeTable[op][i]
+
+        # # Flag overrides
+        # for j, flag in enumerate(Inst.opcodes[1:], start=1):
+        #     if flag in self.flagOverrideTable and self.flagOverrideTable[flag][i] != "NA":
+        #         typeDesc = self.flagOverrideTable[flag][i]
+        #         break
+
+        # Operand overrides
+        if Inst.operands[i].Name == "PT":
+            typeDesc = "Int1"
+
+        return typeDesc
 
     def PropagateTypes(self, Inst, OpTypes):
         # Get Inst opcode
@@ -166,7 +187,7 @@ class TypeAnalysis(SaSSTransform):
         # Static resolve types
         propType = "NOTYPE"
         for i, operand in enumerate(Inst.operands):
-            typeDesc = self.instructionTypeTable[op][i]
+            typeDesc = self.ResolveType(Inst, i)
 
             if typeDesc != "NA" and "PROP" not in typeDesc:
 
@@ -177,7 +198,7 @@ class TypeAnalysis(SaSSTransform):
 
         # Find propagate type
         for i, operand in enumerate(Inst.operands):
-            typeDesc = self.instructionTypeTable[op][i]
+            typeDesc = self.ResolveType(Inst, i)
 
             if typeDesc == "PROP":
                 if operand.Name in OpTypes:
@@ -189,23 +210,9 @@ class TypeAnalysis(SaSSTransform):
         # Propagate types
         if propType != "NOTYPE":
             for i, operand in enumerate(Inst.operands):
-                typeDesc = self.instructionTypeTable[op][i]
+                typeDesc = self.ResolveType(Inst, i)
 
                 if typeDesc == "PROP":
                     OpTypes[operand.Name] = propType
                 elif typeDesc == "PROP_PTR":
                     OpTypes[operand.Name] = propType + "_PTR"
-
-        # Flag overrides
-        for i, opcode in enumerate(Inst.opcodes):
-            if opcode in self.flagOverrideTable:
-                for j, operand in enumerate(Inst.operands):
-                    if self.flagOverrideTable[opcode][j] != "NA":
-                        OpTypes[operand.Name] = self.flagOverrideTable[opcode][j]
-
-        # Operand overrides
-        for i, operand in enumerate(Inst.operands):
-            if operand.Name == "PT":
-                OpTypes[operand.Name] = "Int1"
-            elif operand.IsArg:
-                OpTypes[operand.Name] = "Int32"

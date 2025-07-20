@@ -24,6 +24,9 @@ class Instruction:
         self._TrueBranch = None
         self._FalseBranch = None
         self._CtlCode = None
+
+        self.Users = set()
+        self.ReachingDefs = {}
         
     @property
     def id(self):
@@ -74,7 +77,7 @@ class Instruction:
         return False
 
     def IsBranch(self):
-        if len(self.operands)>0 and self.GetDef().Reg:
+        if len(self.operands)>0 and self.GetDef() and self.GetDef().Reg:
             return self.IsPredicateReg(self.GetDef().Reg)
 
     def InCondPath(self):
@@ -147,7 +150,7 @@ class Instruction:
         
     # Get def operand
     def GetDef(self):
-        if len(self._operands) > 0:
+        if len(self._operands) > 0 and not self.IsStore():
             return self._operands[0]
         return None
 
@@ -173,9 +176,6 @@ class Instruction:
             Def = Inst.getDef()
             if self.GetRegName(Def) in CurrRegs:
                 CurrRegs[self.GetRegName(Def)] = self.RenameReg(Def, Inst)
-                
-        
-            
 
         return False
 
@@ -183,8 +183,9 @@ class Instruction:
     # Get use operand
     def GetUses(self):
         Uses = []
+        startIdx = 0 if self.IsStore() else 1
         if len(self._operands) > 1:
-            for i in range(1, len(self._operands)):
+            for i in range(startIdx, len(self._operands)):
                 Uses.append(self._operands[i])
         return Uses
 
@@ -310,11 +311,6 @@ class Instruction:
             v2 = _get_val(op2, "imad_rhs")
             v3 = _get_val(op3, "imad_addend")
 
-            # Handle imad.wide
-            if len(self.opcodes) > 1 and self.opcodes[1] == "WIDE":
-                v1 = IRBuilder.zext(v1, lifter.ir.IntType(64), "imad_lhs_wide")
-                v2 = IRBuilder.zext(v2, lifter.ir.IntType(64), "imad_rhs_wide")
-                v3 = IRBuilder.zext(v3, lifter.ir.IntType(64), "imad_addend_wide")
 
             tmp = IRBuilder.mul(v1, v2, "imad_tmp")
             tmp = IRBuilder.add(tmp, v3, "imad")
@@ -358,6 +354,12 @@ class Instruction:
             v2 = _get_val(op2, "shl_rhs")
             IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.shl(v1, v2, "shl")
 
+        elif opcode == "SHL64":
+            dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
+            v1 = _get_val(op1, "shl_lhs_64")
+            v2 = _get_val(op2, "shl_rhs_64")
+            IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.shl(v1, v2, "shl")
+
         elif opcode == "SHR":
             dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
             v1 = _get_val(op1, "shr_lhs")
@@ -375,7 +377,13 @@ class Instruction:
             v1 = _get_val(op1, "iadd_lhs")
             v2 = _get_val(op2, "iadd_rhs")
             IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.add(v1, v2, "iadd")
-            
+        
+        elif opcode == "IADD64":
+            dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
+            v1 = _get_val(op1, "iadd_lhs")
+            v2 = _get_val(op2, "iadd_rhs")
+            IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.add(v1, v2, "iadd")
+
         elif opcode == "IADD32I":
             dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
             idxv = _get_val(op1, "iadd32i_idx")
@@ -835,6 +843,16 @@ class Instruction:
             packed = IRBuilder.or_(lo64, hiShift, "pack64_result")
             IRRegs[dest.GetIRRegName(lifter)] = packed
 
+        elif self._opcodes[Idx] == "CAST64":
+            dest, op1 = self._operands[0], self._operands[1]
+            if not dest.IsReg:
+                raise UnsupportedInstructionException(f"CAST64 expects a register operand, got: {dest}")
+            if not op1.IsReg:
+                raise UnsupportedInstructionException(f"CAST64 expects a register operand, got: {op1}")
+
+            val64 = IRBuilder.zext(IRRegs[op1.GetIRRegName(lifter)], ir.IntType(64), "cast64")
+            IRRegs[dest.GetIRRegName(lifter)] = val64
+
         else:
             print("lift instruction: ", self._opcodes[Idx])
             raise UnsupportedInstructionException 
@@ -883,11 +901,3 @@ class Instruction:
         print("inst: ", self._id, self._opcodes)
         for operand in self._operands:
             operand.dump()
-
-    def getUsesInsts(self):
-        """Returns a list of instructions defining the use operands"""
-        raise NotImplementedError("getUsesInsts not yet implemented")
-    
-    def getUserInsts(self):
-        """Returns a set of instructions using this instruction"""
-        raise NotImplementedError("getUserInsts not yet implemented")

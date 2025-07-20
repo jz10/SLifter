@@ -5,6 +5,9 @@ from sir.operand import Operand
 
 class Pack64(SaSSTransform):
     def apply(self, module):
+        print("=== Start of Pack64 Transformation ===")
+
+        count = 0
         for func in module.functions:
             for block in func.blocks:
                 new_insts = []
@@ -34,7 +37,7 @@ class Pack64(SaSSTransform):
 
                         inst_content = f"PACK64 {dst_op.Name}, {src_op_lower.Name} {src_op_upper.Name}"
                         cast_inst = Instruction(
-                            id=f"{inst.id}",
+                            id=f"{inst.id}_pack64",
                             opcodes=["PACK64"],
                             operands=[
                                 dst_op,
@@ -43,8 +46,13 @@ class Pack64(SaSSTransform):
                             ],
                             inst_content=inst_content
                         )
+                        count += 1
                         new_insts.append(cast_inst)
 
-                        inst.operands[ptr_idx] = dst_op
+                        inst.operands[ptr_idx]._Name = new_reg
+                        inst.operands[ptr_idx]._Reg = new_reg
                     new_insts.append(inst)
                 block.instructions = new_insts
+
+        print(f"Total PACK64 instructions added: {count}")
+        print("=== End of Pack64 Transformation ===")
