@@ -26,12 +26,12 @@ class Transforms:
         self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add operator aggregation pass
         self.passes.append(OperAggregate("operator aggregation"))
-        # Add SSA pass again
-        self.passes.append(SSA("SSA"))
+        # # Add SSA pass again
+        # self.passes.append(SSA("SSA"))
         # Add int to ptr pass
         self.passes.append(IntToPtr("int to ptr"))
-        # Add SSA pass again
-        self.passes.append(SSA("SSA"))
+        # # Add SSA pass again
+        # self.passes.append(SSA("SSA"))
         # Add type analysis pass
         self.passes.append(TypeAnalysis("type analysis"))
 
@@ -50,13 +50,13 @@ class Transforms:
         for tranpass in self.passes:
             tranpass.apply(module)
 
-        # print instructions
-        for func in module.functions:
-            print(f"Function: {func.name}")
-            for block in func.blocks:
-                print(f"  Block: {block.addr_content}")
-                for inst in block.instructions:
-                    print(f"    {inst}")
-            print("")
+            # print instructions
+            for func in module.functions:
+                print(f"Function: {func.name}")
+                for block in func.blocks:
+                    print(f"  Block: {block.addr_content}")
+                    for inst in block.instructions:
+                        print(f"    {inst}")
+                print("")
 
         print("done")
