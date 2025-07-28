@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <iostream>
 #include <cmath>
+#include <random>
 #include "kernel_wrapper.h"
 
 extern "C" void _Z9vectorAddPKfS0_Pfi();
@@ -14,9 +15,13 @@ int main() {
     float *B = new float[N];
     float *C = new float[N];
 
+
+    std::random_device dev;
+    std::mt19937 gen(dev());
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     for(int i = 0; i < N; ++i) {
-        A[i] = float(i);
-        B[i] = float(i) * 2.0f;
+        A[i] = dist(gen);
+        B[i] = dist(gen);
     }
 
     launchKernel(_Z9vectorAddPKfS0_Pfi, gridDim, blockDim,

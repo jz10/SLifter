@@ -122,7 +122,64 @@ class SaSSParserBase:
 
     # Split basic block from the list instruction
     def SplitBlocks(self, Insts):
-        raise NoParsingEffort
+        BBs = []
+        BranchBBs = []
+
+        # Initialize current basic block
+        CurrBB = None
+        PredBB = None
+        BranchBB = None
+        
+        for Inst in Insts:
+            if Inst.InCondPath():
+                if not BranchBB.IsInitialized():
+                    # Create the new branch basic block
+                    BranchBB.Init(Inst.id, Inst.pflag)
+
+                # Add instruction into branch basic block
+                BranchBB.AppendInst(Inst)
+                
+            else:
+                if CurrBB == None:
+                    # Create the new basic block
+                    CurrBB = BasicBlock(Inst.id, None)
+                    BBs.append(CurrBB)
+
+                    # Add branch connection
+                    if PredBB != None:
+                        # Setup cpnnection
+                        PredBB.AddSucc(CurrBB)
+                        CurrBB.AddPred(PredBB)
+
+                # Add instruction into main basic block
+                CurrBB.AppendInst(Inst)
+
+                if Inst.IsBranch():
+                    # Set predecessor
+                    PredBB = CurrBB
+
+                    # Cleanup current basic block and branch basic block
+                    CurrBB = None
+
+                    if BranchBB != None and BranchBB.IsEmpty():
+                        # The previous branch instruction does not make corresponding branch BB yet, so it will follow with current branch instruction
+                        # Setup the predecessor and successor for branch basic block
+                        PredBB.AddSucc(BranchBB)
+                        BranchBB.AddPred(PredBB)
+                    else:
+                        # Create an empty basic block
+                        BranchBB = BasicBlock(None, None)
+                        BranchBBs.append(BranchBB)
+
+                        # Setup the predecessor and successor for branch basic block
+                        PredBB.AddSucc(BranchBB)
+                        BranchBB.AddPred(PredBB)
+
+        for BranchBB in BranchBBs:
+            BBs.append(BranchBB)
+            
+        return BBs
+
 
     # Retrieve instruction ID
     def GetInstNum(self, line):
@@ -303,59 +360,6 @@ class SaSSParserBase:
     # Parse control code 
     def ParseControlCode(self, Content, ControlCodes):
        raise NoParsingEffort
-   
-    # Build the control-flow graph
-    def BuildCFG(self, Blocks):
-        # No need to process single basic block case
-        if len(Blocks) == 1:
-            return Blocks
-
-        # Handle the multi-block case
-        JumpTargets = {}
-        for i in range(len(Blocks)):
-            CurrBB = Blocks[i]
-            # Handle branch target case: the branch instruciton locates in current basic block
-            self.CheckAndAddTarget(CurrBB, CurrBB.GetBranchTarget(), JumpTargets)
- 
-            # Handle the direct target case: the next basic block contains exit instruction
-            if i < len(Blocks) - 1:
-                self.CheckAndAddTarget(CurrBB, CurrBB.GetDirectTarget(Blocks[i + 1]), JumpTargets)
-
-        MergedTo = {}
-        NewBlocks = []
-        CurrBB = None
-        for i in range(len(Blocks)):
-            NextBB = Blocks[i]
-            # Add CFG connection to its jump source
-            if NextBB.addr in JumpTargets:
-                for TargetBB in JumpTargets[NextBB.addr]:
-                    if TargetBB in MergedTo:
-                        TargetBB = MergedTo[TargetBB]
-                    
-                    TargetBB.AddSucc(NextBB)
-                    NextBB.AddPred(TargetBB)
-                # Reset current basic block, i.e. restart potential merging
-                CurrBB = None
-                
-            # Handle the basic block merge case
-            if CurrBB != None and NextBB.addr not in JumpTargets:
-                # Merge two basic blocks
-                CurrBB.Merge(NextBB)
-                MergedTo[NextBB] = CurrBB
-
-                continue
-            
-            if CurrBB == None:
-                # Reset current basic block
-                CurrBB = NextBB
-                # Add current basic block to translated block list
-                NewBlocks.append(CurrBB)
-
-        for NewBB in NewBlocks:
-            NewBB.EraseRedundency()
-            # NewBB.dump()
-                
-        return NewBlocks
 
     #Create the control-flow graph
     def CreateCFG(self, Blocks):

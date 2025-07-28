@@ -49,20 +49,39 @@ class OperAggregate(SaSSTransform):
             if Inst1.opcodes[0] == "SHL" and Inst2.opcodes[0] == "SHR":
                 # First opcode SHL, second opcode SHR
                 # First use operand same register, second use operand sums up to 32
-                # (SHL R6, R0.reuse, 0x2 ; SHR R0, R0, 0x1e ;) => SHL R6, R0, 0x2
+                # (SHL R6, R0.reuse, 0x2 ; SHR R0, R0, 0x1e ;) => SHL64 R6, R0, 0x2
                 InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]])
 
 
             elif Inst1.opcodes[0] == "IADD" and Inst2.opcodes[0] == "IADD":
                 # First opcode IADD, second opcode IADD.X
                 # First use operand same register, second use operand offset difference is 4    
-                # (IADD R4.CC, R6.reuse, c[0x0][0x140] ; IADD.X R5, R0.reuse, c[0x0][0x144] ;) => IADD.WIDE R4, R6, c[0x0][0x140]
+                # (IADD R4.CC, R6.reuse, c[0x0][0x140] ; IADD.X R5, R0.reuse, c[0x0][0x144] ;) => IADD64 R4, R6, c[0x0][0x140]
                 InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]])
+
+            elif Inst1.opcodes[0] == "IADD32I" and Inst2.opcodes[0] == "IADD":
+                # First opcode IADD32I, second opcode IADD.X
+                # First instruction has .CC, second instruction has .X
+                # First instruction is an immediate, second must use zero
+                # (IADD32I R20.CC R7 0x4 ; IADD.X R21 RZ R22;) => IADD64 R20, R7, 0x4
+
+                if Inst2.GetUses()[0].Name != "RZ":
+                    raise ValueError("Second instruction must use RZ as a use operand for IADD64 aggregation")
+
+                InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[1]])
             
+            elif Inst1.opcodes[0] == "MOV" and Inst2.opcodes[0] == "MOV":
+                # First opcode MOV, second opcode MOV.X
+                # First use operand same register, second use operand offset difference is 4
+                # (MOV R4, R11 ; MOV R5, R12) => MOV64 R4, R11
+                InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]])
+
             else:
                 # Current pair not matching known patterns
                 raise ValueError(f"Unhandled instruction pair: {Inst1} and {Inst2}")
 
+            print(f"Processing pair: {Inst1} and {Inst2}")
+            print(f"Next pair: {InstPair[0]} and {InstPair[1]}")
             DualInsts[Inst1] = Inst1, Inst2
 
             # Merge point reached, insert CAST64 before the starting instruction pair

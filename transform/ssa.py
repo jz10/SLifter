@@ -109,9 +109,6 @@ class SSA(SaSSTransform):
         Def = Inst.GetDef()
         if not Def or not Def.IsReg:
             return
-        
-        if Inst.opcodes[0] == "PACK64":
-            print("debug point!")
 
         # Don't rename predicate registers or RZ register
         if Inst.IsPredicateReg(Def.Reg) or Def.Reg == "RZ":
@@ -229,9 +226,6 @@ class SSA(SaSSTransform):
                             continue
                         
                         reg_name = operand.Reg
-
-                        if reg_name == "R6_int64@00e8":
-                            print("debug point!")
 
                         if reg_name not in register_mapping:
                             register_mapping[reg_name] = f"R{register_counter}"

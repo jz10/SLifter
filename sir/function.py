@@ -116,8 +116,8 @@ class Function:
             else:
                 name = f"c[0x0][{hex(entry.ArgOffset)}]"
 
-            if entry.TypeDesc == "Int64":
-                addr = Builder.bitcast(addr, lifter.ir.PointerType(lifter.ir.IntType(64)))
+            if entry.TypeDesc != "Int32" and entry.TypeDesc != "NOTYPE":
+                addr = Builder.bitcast(addr, lifter.ir.PointerType(lifter.GetIRType(entry.TypeDesc)))
             val = Builder.load(addr, name)
             ConstMem[entry.ArgOffset] = val
 

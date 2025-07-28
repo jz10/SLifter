@@ -9,6 +9,7 @@ class TypeAnalysis(SaSSTransform):
         # PROP_PTR means it is a pointer to the other operands
         self.instructionTypeTable = {
             "FADD": ["Float32", "Float32", "Float32", "NA", "NA"],
+            "FFMA": ["Float32", "Float32", "Float32", "Float32", "NA"],
             "S2R": ["Int32", "Int32", "Int32", "NA", "NA"],
             "IMAD": ["Int32", "Int32", "Int32", "Int32", "NA"],
             "IADD3": ["Int32", "Int32", "Int32", "Int32", "NA"],
@@ -16,7 +17,7 @@ class TypeAnalysis(SaSSTransform):
             "IADD32I": ["Int32", "Int32", "NA", "NA", "NA"],
             "MOV": ["Int32", "Int32", "NA", "NA", "NA"],
             "IADD": ["Int32", "Int32", "Int32", "NA", "NA"],
-            "ISETP": ["Int1", "NA", "NA", "NA", "NA"],
+            "ISETP": ["Int1", "Int32", "Int32", "Int32", "Int32"],
             "AND": ["PROP", "PROP", "PROP", "NA", "NA"],
             "OR": ["PROP", "PROP", "PROP", "NA", "NA"],
             "XOR": ["PROP", "PROP", "PROP", "NA", "NA"],
@@ -29,7 +30,6 @@ class TypeAnalysis(SaSSTransform):
             "SULD": ["PROP", "PROP_PTR", "NA", "NA", "NA"],
             "STG": ["PROP_PTR", "PROP", "NA", "NA", "NA"],
             "SUST": ["PROP_PTR", "PROP", "NA", "NA", "NA"],
-            "PHI": ["PROP", "PROP", "PROP", "PROP", "NA"],
             "F2I": ["Int32", "Float32", "NA", "NA", "NA"],
             "I2F": ["Float32", "Int32", "NA", "NA", "NA"],
             "NOP": ["NA", "NA", "NA", "NA", "NA"],
@@ -39,11 +39,13 @@ class TypeAnalysis(SaSSTransform):
             "SSY": ["NA", "NA", "NA", "NA", "NA"],
 
             # Dummy instruction types
+            "PHI": ["PROP", "PROP", "PROP", "PROP", "NA"],
             "INTTOPTR": ["PROP_PTR", "Int64", "NA", "NA", "NA"],
             "PACK64": ["Int64", "Int32", "Int32", "NA", "NA"],
             "CAST64": ["Int64", "Int32", "NA", "NA", "NA"],
             "IADD64": ["Int64", "Int64", "Int64", "NA", "NA"],
-            "SHL64": ["Int64", "Int64", "Int64", "NA", "NA"]
+            "SHL64": ["Int64", "Int64", "Int64", "NA", "NA"],
+            "MOV64": ["Int64", "Int64", "NA", "NA", "NA"],
         }
         
         # self.flagOverrideTable = {

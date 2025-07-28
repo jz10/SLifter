@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 #include <type_traits>
+#include <bit>
+#include <iostream>
 
 extern "C" int const_mem[1024] = {0};
 
@@ -12,22 +14,35 @@ enum : int {
     ARG_BASE      = 0x140
 };
 
+static int off = ARG_BASE;
+
+
+static constexpr size_t align_up(size_t x, size_t a)
+{
+    return (x + a - 1) & ~(a - 1);
+}
+
 template<typename T>
 inline void writeArg(int idx, T v)
 {
-    const int off = ARG_BASE + idx * 8;
 
-    if constexpr (std::is_pointer_v<T> || sizeof(T) == 8) {
-        uint64_t raw = std::is_pointer_v<T> ?
-                       reinterpret_cast<uint64_t>(v) :
-                       *reinterpret_cast<uint64_t*>(&v);
-
-        const_mem[off]     = uint32_t(raw);
-        const_mem[off + 1] = uint32_t(raw >> 32);
+    if constexpr (std::is_pointer_v<T>) {
+        uint64_t raw = reinterpret_cast<uint64_t>(v);
+        int aligned_off = align_up(off, sizeof(T));
+        const_mem[aligned_off]     = static_cast<uint32_t>(raw);
+        const_mem[aligned_off + 1] = static_cast<uint32_t>(raw >> 32);
+    } else if constexpr (sizeof(T) == 8) {
+        uint64_t raw = std::bit_cast<uint64_t>(v);
+        int aligned_off = align_up(off, sizeof(T));
+        const_mem[aligned_off]     = static_cast<uint32_t>(raw);
+        const_mem[aligned_off + 1] = static_cast<uint32_t>(raw >> 32);
     } else {
-        const_mem[off]     = uint32_t(v);
-        const_mem[off + 1] = 0;
+        const_mem[off]     = std::bit_cast<uint32_t>(v);
     }
+
+    std::cout<<"Arg "<<off<<", type="<<typeid(T).name()<<", size="<<sizeof(T)<<std::endl;
+
+    off += sizeof(T);
 }
 
 template<typename Func, typename... Args>

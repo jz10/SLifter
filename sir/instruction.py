@@ -162,24 +162,6 @@ class Instruction:
         NewReg = RegName + "@" + str(Inst.id)
         return NewReg
 
-
-    def ProcessBB(self, BB, InRegsMap, OutRegsMap):
-
-        NewInRegs = self.GenerateInRegs(BB, InRegsMap, OutRegsMap)
-
-        if NewInRegs == InRegsMap[BB]:
-            return False
-        
-        CurrRegs = NewInRegs.copy()
-
-        for Inst in BB.instructions:
-            Def = Inst.getDef()
-            if self.GetRegName(Def) in CurrRegs:
-                CurrRegs[self.GetRegName(Def)] = self.RenameReg(Def, Inst)
-
-        return False
-
-
     # Get use operand
     def GetUses(self):
         Uses = []
@@ -288,13 +270,8 @@ class Instruction:
                 return lifter.ir.Constant(op.GetIRType(lifter), op.ImmediateValue)
             raise UnsupportedInstructionException(f"Unsupported operand type: {op}")
 
-        if opcode == "MOV":
+        if opcode == "MOV" or opcode == "MOV64":
             dest, src = self._operands[0], self._operands[1]
-
-            # if src.IsArg and IRArgs.get(src.ArgOffset) is None:
-            #     print(f"Warning: MOV source argument {src.ArgOffset} is not defined.")
-            #     return
-
             val = _get_val(src, "mov")
             IRRegs[dest.GetIRRegName(lifter)] = val
 
@@ -324,6 +301,15 @@ class Instruction:
             v1 = _get_val(op1, "fadd_lhs")
             v2 = _get_val(op2, "fadd_rhs")
             IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.fadd(v1, v2, "fadd")
+
+        elif opcode == "FFMA":
+            dest, op1, op2, op3 = self._operands[0], self._operands[1], self._operands[2], self._operands[3]
+            v1 = _get_val(op1, "ffma_lhs")
+            v2 = _get_val(op2, "ffma_rhs")
+            v3 = _get_val(op3, "ffma_addend")
+            tmp = IRBuilder.fmul(v1, v2, "ffma_tmp")
+            tmp = IRBuilder.fadd(tmp, v3, "ffma")
+            IRRegs[dest.GetIRRegName(lifter)] = tmp
 
         elif opcode == "ISCADD":
             dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]

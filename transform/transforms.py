@@ -6,6 +6,7 @@ from transform.sr_substitute import SRSubstitute
 from transform.inttoptr import IntToPtr
 from transform.pack64 import Pack64
 from transform.defuse_analysis import DefUseAnalysis
+from transform.mov_eliminate import MovEliminate
 
 class Transforms:
     def __init__(self, name):
@@ -24,14 +25,18 @@ class Transforms:
         # self.passes.append(SSA("SSA"))
         # Add def-use analysis pass
         self.passes.append(DefUseAnalysis("def-use analysis"))
+        # Add mov elimination pass
+        self.passes.append(MovEliminate("mov elimination"))
+        # Add def-use analysis pass again
+        self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add operator aggregation pass
         self.passes.append(OperAggregate("operator aggregation"))
         # # Add SSA pass again
         # self.passes.append(SSA("SSA"))
         # Add int to ptr pass
         self.passes.append(IntToPtr("int to ptr"))
-        # # Add SSA pass again
-        # self.passes.append(SSA("SSA"))
+        # Add SSA pass again
+        self.passes.append(SSA("SSA"))
         # Add type analysis pass
         self.passes.append(TypeAnalysis("type analysis"))
 
