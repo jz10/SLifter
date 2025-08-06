@@ -10,19 +10,20 @@ class OperAggregate(SaSSTransform):
 
         for func in module.functions:
 
-            DualInsts = {}
-            MergePoints = set()
+            InsertInsts = {}
+            RemoveInsts = set()
+            Cast64Inserts = set()
             Pack64Insts = self.GetPack64Instructions(func)
             
             for Inst in Pack64Insts:
-                self.MergeInstructionPairs(Inst, MergePoints, DualInsts)
+                self.MergeInstructionPairs(Inst, Cast64Inserts, InsertInsts, RemoveInsts)
 
-            self.ApplyChanges(func, Pack64Insts, MergePoints, DualInsts)
+            self.ApplyChanges(func, Pack64Insts, Cast64Inserts, InsertInsts, RemoveInsts)
 
             print(f"Function {func.name}:")
-            print(f"Dual instructions merged: {len(DualInsts)}")
-            print(f"CAST64 created: {len(MergePoints)}")
-            print(f"PACK64 instructions removed: {len(Pack64Insts)}")
+            print(f"Cast64 Inserts: {len(Cast64Inserts)}")
+            print(f"Insert Instructions: {len(InsertInsts)}")
+            print(f"Remove Instructions: {len(RemoveInsts)}")
         print("=== End of Operator Aggregation Transformation ===")
             
     def GetPack64Instructions(self, func):
@@ -34,7 +35,7 @@ class OperAggregate(SaSSTransform):
 
         return Pack64Insts
 
-    def MergeInstructionPairs(self, Pack64Inst, MergePoints, DualInsts):
+    def MergeInstructionPairs(self, Pack64Inst, Cast64Inserts, InsertInsts, RemoveInsts):
 
         UseOps = Pack64Inst.GetUses()
 
@@ -46,18 +47,59 @@ class OperAggregate(SaSSTransform):
             CurrPair = Queue.popleft()
             Inst1, Inst2 = CurrPair
 
+            if Inst1 in RemoveInsts:
+                # Already processed this instruction pair
+                continue
+
+            NextInstPairs = []
+
             if Inst1.opcodes[0] == "SHL" and Inst2.opcodes[0] == "SHR":
                 # First opcode SHL, second opcode SHR
                 # First use operand same register, second use operand sums up to 32
                 # (SHL R6, R0.reuse, 0x2 ; SHR R0, R0, 0x1e ;) => SHL64 R6, R0, 0x2
-                InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]])
+
+                dest_op = Inst1.GetDef().Clone()
+                src_op = Inst2.GetUses()[0].Clone()
+                imm_op = Inst1.GetUses()[1].Clone()
+                inst = Instruction(
+                    id=f"{Inst1.id}_shl64",
+                    opcodes=["SHL64"],
+                    operands=[dest_op, src_op, imm_op],
+                    inst_content=f"SHL64 {dest_op.Name}, {src_op.Name}, {imm_op.Name}",
+                    parentBB=Inst1.parent
+                )
+                InsertInsts[Inst1] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+
+                NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]]))
 
 
             elif Inst1.opcodes[0] == "IADD" and Inst2.opcodes[0] == "IADD":
                 # First opcode IADD, second opcode IADD.X
-                # First use operand same register, second use operand offset difference is 4    
                 # (IADD R4.CC, R6.reuse, c[0x0][0x140] ; IADD.X R5, R0.reuse, c[0x0][0x144] ;) => IADD64 R4, R6, c[0x0][0x140]
-                InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]])
+                # (IADD R29.CC R28 R20, IADD.X R31 R30 R21) => IADD64 R29, R28, R20
+
+                dest_op = Inst1.GetDef().Clone()
+                src_op = Inst1.GetUses()[0].Clone()
+                src_op2 = Inst1.GetUses()[1].Clone()
+                inst = Instruction(
+                    id=f"{Inst1.id}_iadd64",
+                    opcodes=["IADD64"],
+                    operands=[dest_op, src_op, src_op2],
+                    inst_content=f"IADD64 {dest_op.Name}, {src_op.Name}, {src_op2.Name}",
+                    parentBB=Inst1.parent
+                )
+
+                InsertInsts[Inst1] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+
+                for i in range(len(Inst1.GetUses())):
+                    if Inst1.GetUses()[i].IsReg:
+                        NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[i]], Inst2.ReachingDefs[Inst2.GetUses()[i]]))
 
             elif Inst1.opcodes[0] == "IADD32I" and Inst2.opcodes[0] == "IADD":
                 # First opcode IADD32I, second opcode IADD.X
@@ -67,41 +109,120 @@ class OperAggregate(SaSSTransform):
 
                 if Inst2.GetUses()[0].Name != "RZ":
                     raise ValueError("Second instruction must use RZ as a use operand for IADD64 aggregation")
+                
+                dest_op = Inst1.GetDef().Clone()
+                src_op = Inst1.GetUses()[0].Clone()
+                imm_op = Inst1.GetUses()[1].Clone()
+                inst = Instruction(
+                    id=f"{Inst1.id}_iadd64",
+                    opcodes=["IADD64"],
+                    operands=[dest_op, src_op, imm_op],
+                    inst_content=f"IADD64 {dest_op.Name}, {src_op.Name}, {imm_op.Name}",
+                    parentBB=Inst1.parent
+                )
 
-                InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[1]])
-            
+                InsertInsts[Inst1] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+
+                NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[1]]))
+
             elif Inst1.opcodes[0] == "MOV" and Inst2.opcodes[0] == "MOV":
                 # First opcode MOV, second opcode MOV.X
                 # First use operand same register, second use operand offset difference is 4
                 # (MOV R4, R11 ; MOV R5, R12) => MOV64 R4, R11
-                InstPair = (Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]])
+
+                dest_op = Inst1.GetDef().Clone()
+                src_op = Inst1.GetUses()[0].Clone()
+                src_op2 = Inst1.GetUses()[1].Clone()
+                inst = Instruction(
+                    id=f"{Inst1.id}_mov64",
+                    opcodes=["MOV64"],
+                    operands=[dest_op, src_op, src_op2],
+                    inst_content=f"MOV64 {dest_op.Name}, {src_op.Name}, {src_op2.Name}",
+                    parentBB=Inst1.parent
+                )
+
+                InsertInsts[Inst1] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+
+                NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]]))
+
+            elif Inst1.opcodes[0] == "PHI" and Inst2.opcodes[0] == "PHI":
+                # Both instructions are PHI
+                # (PHI R4, R5 ; PHI R6, R7) => PHI64 R4, R5, R7
+
+                dest_op = Inst1.GetDef().Clone()
+                src_ops = [op.Clone() for op in Inst1.GetUses()]
+                inst = Instruction(
+                    id=f"{Inst1.id}_phi64",
+                    opcodes=["PHI64"],
+                    operands=[dest_op] + src_ops,
+                    inst_content=f"PHI64 {dest_op.Name}, {', '.join(op.Name for op in src_ops)}",
+                    parentBB=Inst1.parent
+                )
+
+                InsertInsts[Inst1] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+
+                for i in range(len(Inst1.GetUses())):
+                    NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[i]], Inst2.ReachingDefs[Inst2.GetUses()[i]]))
+
+            # (SHR R3 R2.reuse 0x1e, ISCADD R2.CC R2 c[0x0][0x150] 0x2, IADD.X R3 R3 c[0x0][0x154]) => (IMAD64 R2, R2, c[0x0][0x150], 0x2)
+            # This is special because there are three instructions involved
+            elif Inst1.opcodes[0] == "ISCADD" and Inst2.opcodes[0] == "IADD":
+                Inst3 = Inst2.ReachingDefs[Inst2.GetUses()[0]] # SHR instruction
+
+                if Inst3.opcodes[0] != "SHR":
+                    raise ValueError("Expected SHR instruction as the third instruction in the pair")
+                
+                dest_op = Inst1.GetDef().Clone()
+                src_op = Inst1.GetUses()[0].Clone() 
+                src_op2 = Inst1.GetUses()[1].Clone()
+                offset = Inst1.GetUses()[2].ImmediateValue
+                val = 1 << offset
+                imm_op = Operand(str(val), None, None, -1, False, False, False, True, val)
+                inst = Instruction(
+                    id=f"{Inst1.id}_imad64",
+                    opcodes=["IMAD64"],
+                    operands=[dest_op, src_op, imm_op, src_op2],
+                    inst_content=f"IMAD64 {dest_op.Name}, {src_op.Name}, {imm_op.Name}, {src_op2.Name}",
+                    parentBB=Inst1.parent
+                )
+
+                InsertInsts[Inst3] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+                RemoveInsts.add(Inst3)
+
+                # Special case: Instruction pairs should end at this point
+                # This pattern always start from a 32-bit register
+                Cast64Inserts.add(Inst3)
+                continue
 
             else:
                 # Current pair not matching known patterns
                 raise ValueError(f"Unhandled instruction pair: {Inst1} and {Inst2}")
 
             print(f"Processing pair: {Inst1} and {Inst2}")
-            print(f"Next pair: {InstPair[0]} and {InstPair[1]}")
-            DualInsts[Inst1] = Inst1, Inst2
+            for InstPair in NextInstPairs:
+                print(f"\tNext pair: {InstPair[0]} and {InstPair[1]}")
 
-            # Merge point reached, insert CAST64 before the starting instruction pair
-            if InstPair[0] == InstPair[1]:
-                MergePoints.add(Inst1)
-                break
+            for InstPair in NextInstPairs:
+                # If merge point reached, insert CAST64 before the starting instruction pair
+                if InstPair[0] == InstPair[1]:
+                    Cast64Inserts.add(Inst1)
+                else:
+                    Queue.append(InstPair)
 
-            Queue.append(InstPair)
 
-
-    def ApplyChanges(self, func, Pack64Insts, MergePoints, DualInsts):
-
-        RemoveInsts = set()
-
-        # Merge dual insts by removing the second and updating the first
-        for Inst1, Inst2 in DualInsts.values():
-            # Remove .CC in def operand
-            Inst1.GetDef()._Suffix = ''
-            Inst1._opcodes = [Inst1.opcodes[0] + "64"] 
-            RemoveInsts.add(Inst2)
+    def ApplyChanges(self, func, Pack64Insts, Cast64Inserts, InsertInsts, RemoveInsts):
 
         # Remove Pack64Insts and handle register dependencies
         for Inst in Pack64Insts:
@@ -116,10 +237,8 @@ class OperAggregate(SaSSTransform):
             new_insts = []
 
             for inst in bb.instructions:
-                if inst in RemoveInsts:
-                    continue
 
-                if inst in MergePoints:
+                if inst in Cast64Inserts:
                     # Create the CAST64 instruction
                     src_op_name = inst.GetUses()[0].Name
                     src_op = Operand(src_op_name, src_op_name, None, -1, True, False, False)
@@ -132,13 +251,20 @@ class OperAggregate(SaSSTransform):
                         id=f"{inst.id}_cast64",
                         opcodes=["CAST64"],
                         operands=[dest_op, src_op],
-                        inst_content=inst_content
+                        inst_content=inst_content,
+                        parentBB=inst.parent
                     )
                     new_insts.append(cast_inst)
 
                     # Update the instruction to use the new register
-                    inst.GetUses()[0].SetReg(dest_op_name)
+                    InsertInsts[inst].GetUses()[0].SetReg(dest_op_name)
 
-                new_insts.append(inst)
+                if inst in InsertInsts:
+                    insertInst = InsertInsts[inst]
+                    new_insts.append(insertInst)
+
+                
+                if inst not in RemoveInsts:
+                    new_insts.append(inst)
 
             bb.instructions = new_insts

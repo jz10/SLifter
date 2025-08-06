@@ -19,6 +19,8 @@ class Transforms:
         self.passes.append(SSA("SSA"))
         # Add special register substitution pass
         self.passes.append(SRSubstitute("SR Substitute"))
+        # Add def-use analysis pass
+        self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add xmad to mul64 pass
         self.passes.append(XmadToImad("xmad to mul64"))
         # Add passes
@@ -31,8 +33,8 @@ class Transforms:
         self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add operator aggregation pass
         self.passes.append(OperAggregate("operator aggregation"))
-        # # Add SSA pass again
-        # self.passes.append(SSA("SSA"))
+        # Add SSA pass again
+        self.passes.append(SSA("SSA"))
         # Add int to ptr pass
         self.passes.append(IntToPtr("int to ptr"))
         # Add SSA pass again
@@ -46,9 +48,17 @@ class Transforms:
         for func in module.functions:
             print(f"Function: {func.name}")
             for block in func.blocks:
-                print(f"  Block: {block.addr_content}")
+                print(f"  Block: {block.addr_content}", end="")
+                print(f" from: [", end="")
+                for pred in block._preds:
+                    print(f"{pred.addr_content},", end="")
+                print(f"]", end="")
+                print(f" to: [", end="")
+                for succ in block._succs:
+                    print(f"{succ.addr_content},", end="")
+                print(f"]")
                 for inst in block.instructions:
-                    print(f"    {inst}")
+                    print(f"{inst.id}    {inst}")
             print("")
 
             

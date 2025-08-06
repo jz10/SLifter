@@ -44,7 +44,8 @@ class Pack64(SaSSTransform):
                                 src_op_lower,
                                 src_op_upper
                             ],
-                            inst_content=inst_content
+                            inst_content=inst_content,
+                            parentBB=inst.parent
                         )
                         count += 1
                         new_insts.append(cast_inst)

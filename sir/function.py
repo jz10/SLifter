@@ -130,4 +130,10 @@ class Function:
             Builder = lifter.ir.IRBuilder(IRBlock)
             BB.Lift(lifter, Builder, IRRegs, self.BlockMap, ConstMem)
 
+        # Second pass to add incoming phi nodes
+        for BB in self.blocks:
+            IRBlock = self.BlockMap[BB]
+            Builder = lifter.ir.IRBuilder(IRBlock)
+            BB.LiftPhiNodes(lifter, Builder, IRRegs, self.BlockMap)
+
         

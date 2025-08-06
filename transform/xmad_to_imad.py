@@ -103,7 +103,8 @@ class XmadToImad(SaSSTransform):
                     id=f"imad_{def_reg}",
                     opcodes=["IMAD"],
                     operands=imad_operands,
-                    inst_content=imad_inst_content
+                    inst_content=imad_inst_content,
+                    parentBB=instr1.parent
                 )
                 
                 # Find the actual indices of the instructions in the list
@@ -203,7 +204,8 @@ class XmadToImad(SaSSTransform):
                     id=f"imad_{def_reg}",
                     opcodes=["IMAD"],
                     operands=imad_operands,
-                    inst_content=imad_inst_content
+                    inst_content=imad_inst_content,
+                    parentBB=instr1.parent
                 )
                 
                 # Find the actual indices of the instructions in the list

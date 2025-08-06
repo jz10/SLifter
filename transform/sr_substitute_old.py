@@ -50,7 +50,8 @@ def process(instructions):
                         id=f"s2r_{hex(offset)}",
                         opcodes=["S2R"],
                         operands=[temp_operand, sr_operand],
-                        inst_content=f"S2R {temp_reg_name}, {sr_name}"
+                        inst_content=f"S2R {temp_reg_name}, {sr_name}",
+                        parentBB=inst.parent
                     )
                     
                     new_instructions.append(s2r_inst)

@@ -4,7 +4,7 @@
 #include <random>
 #include "kernel_wrapper.h"
 
-extern "C" void _Z9vectorAddPKfS0_Pfi();
+extern "C" void _Z5loop1PKfS0_Pfi();
 
 int main() {
     constexpr int N = 1024;
@@ -24,16 +24,15 @@ int main() {
         B[i] = dist(gen);
     }
 
-    launchKernel(_Z9vectorAddPKfS0_Pfi, gridDim, blockDim,
+    launchKernel(_Z5loop1PKfS0_Pfi, gridDim, blockDim,
                           A, B, C, N);
 
     bool ok = true;
-    for(int i = 0; i < N; ++i) {
-        float expected = A[i] + B[i];
-        if (std::fabs(C[i] - expected) > 1e-6f) {
-            std::cout << "FAIL at index " << i
-                      << ": got " << C[i]
-                      << ", expected " << expected << "\n";
+    for (int idx = 0; idx < N; ++idx) {
+        double expected = (static_cast<double>(N - 1) + idx) * (N - idx) * 0.5; // sum_{i=idx}^{N-1} i
+        if (std::fabs(static_cast<double>(C[idx]) - expected) > 1e-3 * expected) {
+            std::cerr << "Mismatch at " << idx << ": got " << C[idx]
+                      << ", expected " << expected << std::endl;
             ok = false;
             break;
         }

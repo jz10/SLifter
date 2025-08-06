@@ -31,7 +31,8 @@ class IntToPtr(SaSSTransform):
                                 Operand(src_op.Name, src_op.Reg, src_op._Suffix,
                                         src_op._ArgOffset, True, False, False)
                             ],
-                            inst_content=inst_content
+                            inst_content=inst_content,
+                            parentBB=inst.parent
                         )
                         new_insts.append(cast_inst)
                         count += 1

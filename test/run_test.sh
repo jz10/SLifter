@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # TESTS=("vecadd" "loop" "resnet18" "tensor" "hetero_mark_aes" "hetero_mark_fir" "hetero_mark_pr" "spaxy" "spaxy1")
-# TESTS=("loop")
-TESTS=("vecadd" "spaxy" "spaxy1")
+TESTS=("loop2")
+# TESTS=("vecadd" "spaxy" "spaxy1")
 
 for TEST in "${TESTS[@]}"; do
   echo "Running test: ${TEST}"

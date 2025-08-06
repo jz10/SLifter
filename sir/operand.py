@@ -175,3 +175,15 @@ class Operand:
     def dump(self):
         print("operand: ", self._Name, self._Reg)
     
+    def Clone(self):
+        return Operand(
+            Name=self._Name,
+            Reg=self._Reg,
+            Suffix=self._Suffix,
+            ArgOffset=self._ArgOffset,
+            IsReg=self._IsReg,
+            IsArg=self._IsArg,
+            IsMemAddr=self._IsMemAddr,
+            IsImmediate=self._IsImmediate,
+            ImmediateValue=self._ImmediateValue
+        )

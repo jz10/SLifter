@@ -14,7 +14,7 @@ class TypeAnalysis(SaSSTransform):
             "IMAD": ["Int32", "Int32", "Int32", "Int32", "NA"],
             "IADD3": ["Int32", "Int32", "Int32", "Int32", "NA"],
             "XMAD": ["Int32", "Int32", "Int32", "Int32", "NA"],
-            "IADD32I": ["Int32", "Int32", "NA", "NA", "NA"],
+            "IADD32I": ["Int32", "Int32", "Int32", "NA", "NA"],
             "MOV": ["Int32", "Int32", "NA", "NA", "NA"],
             "IADD": ["Int32", "Int32", "Int32", "NA", "NA"],
             "ISETP": ["Int1", "Int32", "Int32", "Int32", "Int32"],
@@ -33,10 +33,12 @@ class TypeAnalysis(SaSSTransform):
             "F2I": ["Int32", "Float32", "NA", "NA", "NA"],
             "I2F": ["Float32", "Int32", "NA", "NA", "NA"],
             "NOP": ["NA", "NA", "NA", "NA", "NA"],
+            "BRA": ["NA", "NA", "NA", "NA", "NA"],
             "EXIT": ["NA", "NA", "NA", "NA", "NA"],
             "RET": ["NA", "NA", "NA", "NA", "NA"],
             "SYNC": ["NA", "NA", "NA", "NA", "NA"],
             "SSY": ["NA", "NA", "NA", "NA", "NA"],
+            "DEPBAR": ["NA", "NA", "NA", "NA", "NA"],
 
             # Dummy instruction types
             "PHI": ["PROP", "PROP", "PROP", "PROP", "NA"],
@@ -44,8 +46,11 @@ class TypeAnalysis(SaSSTransform):
             "PACK64": ["Int64", "Int32", "Int32", "NA", "NA"],
             "CAST64": ["Int64", "Int32", "NA", "NA", "NA"],
             "IADD64": ["Int64", "Int64", "Int64", "NA", "NA"],
+            "IMAD64": ["Int64", "Int64", "Int64", "Int64", "NA"],
             "SHL64": ["Int64", "Int64", "Int64", "NA", "NA"],
             "MOV64": ["Int64", "Int64", "NA", "NA", "NA"],
+            "IADD32I64": ["Int64", "Int64", "Int64", "NA", "NA"],
+            "PHI64": ["Int64", "Int64", "Int64", "Int64", "Int64"],
         }
         
         # self.flagOverrideTable = {
@@ -160,7 +165,10 @@ class TypeAnalysis(SaSSTransform):
         return Changed
     
     def ResolveType(self, Inst, i):
-        op = Inst.opcodes[0] 
+        idx = 0
+        if Inst.IsPredicateReg(Inst._opcodes[idx]):
+            idx += 1
+        op = Inst._opcodes[idx]
         typeDesc = self.instructionTypeTable[op][i]
 
         # # Flag overrides

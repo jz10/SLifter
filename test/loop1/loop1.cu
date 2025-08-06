@@ -1,16 +1,16 @@
 #include <stdio.h>
 #include <cuda_runtime.h>
 
-__global__ void vecAdd(const float* A, const float* B, float* C, int n) {
+__global__ void loop1(const float* A, const float* B, float* C, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     
+    int sum = 0;
     #pragma unroll 1
     for (int i = idx; i < n; i += 1)
-        // if (C[i] < A[i])
-            C[i] += A[i] + B[i];
-        // else
-        //     C[i] = A[i] - B[i];
+        sum += i;
+
+    C[idx] = sum;
 }
 
 int main() {
@@ -29,7 +29,7 @@ int main() {
     cudaMemcpy(d_B, h_B, sz, cudaMemcpyHostToDevice);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
-    vecAdd<<<blocks, threads>>>(d_A, d_B, d_C, n);
+    loop1<<<blocks, threads>>>(d_A, d_B, d_C, n);
     cudaMemcpy(h_C, d_C, sz, cudaMemcpyDeviceToHost);
     for (int i = 0; i < 10; i++)
         printf("%f ", h_C[i]);

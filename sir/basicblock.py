@@ -1,14 +1,14 @@
 from sir.instruction import Instruction
 
 class BasicBlock:
-    def __init__(self, addr_content, pflag):
+    def __init__(self, addr_content, pflag, instructions=[]):
         # The address of the start of this basic block
         self.addr_content = addr_content
         if addr_content != None:
             # Calculate the integer offset
             self.addr = int(addr_content, base = 16)
         # Instruction list
-        self.instructions = []
+        self.instructions = instructions
         # Predecessor
         self._preds = []
         # Successors
@@ -33,16 +33,12 @@ class BasicBlock:
                 print("Add none successor???")
             self._succs.append(succ)
 
-    def HasBranch(self):
-        for inst in self.instructions:
-            if inst.IsBranch():
-                return True
-            
-        return False
-
     # Check if the basic block was initialized normally
     def IsInitialized(self):
         return self.addr_content != None
+    
+    def Isolated(self):
+        return len(self._preds) == 0 and len(self._succs) == 0
 
     # Initialize the basic bloci with entry address and branch flag
     def Init(self, addr_content, pflag):
@@ -53,27 +49,6 @@ class BasicBlock:
     # Check if the basic block contains any instructions
     def IsEmpty(self):
         return len(self.instructions) == 0
-    
-    def GetBranchTarget(self):
-        for i in range(len(self.instructions)):
-            inst = self.instructions[i]
-            if inst.IsBranch():
-                if i == len(self.instructions) - 1:
-                    # The last instruction in basic block
-                    return self.addr + 64
-                else:
-                    # Not the last instruction in basic block
-                    if self.instructions[len(self.instructions) - 1].IsExit():
-                        return self.addr + 32
-                    
-        return 0
-
-    def GetDirectTarget(self, NextBB):
-        TargetInst = NextBB.instructions[0]
-        if TargetInst.IsExit():
-            return NextBB.addr
-
-        return 0
 
     # Merge congtent with another basic block
     def Merge(self, another):
@@ -92,7 +67,7 @@ class BasicBlock:
         #    # Empty the instruction list and just keep the exit instruction
         #    self.instructions = []
         #    self.instructions.append(inst)
-        Idx = 0;
+        Idx = 0
         while Idx < len(self.instructions):
             Inst = self.instructions[Idx]
             if Inst.IsNOP():
@@ -111,64 +86,52 @@ class BasicBlock:
         for Inst in self.instructions:
             Inst.GetRegs(Regs, lifter)
 
-    # Get the true branch
-    def GetTrueBranch(self, Inst):
-        # Get the branch flag from branch instruction, i.e. P0 or !P0
-        PFlag = Inst.GetBranchFlag()
-        if PFlag == None:
-            return None
-
-        # Get the basic block that contains branch flag from successors
-        for BB in self._succs:
-            BPFlag = BB.PFlag
-            if PFlag == BPFlag:
-                return BB
-
-        return None
-    
-    # Get the false branch
-    def GetFalseBranch(self, Inst):
+    def GetBranchPair(self, Inst):
         # Get the branch flag from branch instruction, i.e. P0 or !P0
         PFlag = Inst.GetBranchFlag()
         if PFlag == None:
             return None
         
-        # Get the basic block that does not contain the branch flag from successors
-        for BB in self._succs:
-            BPFlag = BB.PFlag
-            if BPFlag == None:
-                return BB
+        if len(self._succs) != 2:
+            print("Warning: More than/less than two successors in basic block")
+            
 
-        return None
+        NegPFlag = "!" + PFlag
+
+        Index = 0
+        
+        for i, BB in enumerate(self._succs):
+            BPFlag = BB.PFlag
+            if PFlag == BPFlag:
+                Index = i
+                break
+            elif NegPFlag == BPFlag:
+                Index = (i + 1) % len(self._succs)
+                break
+
+        return self._succs[Index], self._succs[(Index + 1) % len(self._succs)]
     
     def Lift(self, lifter, IRBuilder, IRRegs, BlockMap, ConstMem):
-        # Handle SSA PHI instructions at the top of the block
-        idx = 0
-        while idx < len(self.instructions) and self.instructions[idx].opcodes[:1] == ["PHI"]:
-            phi_inst = self.instructions[idx]
-            # Definition operand is first operand
-            def_op = phi_inst.operands[0]
-            phi_val = IRBuilder.phi(def_op.GetIRType(lifter), def_op.GetIRRegName(lifter))
-            # Incoming operands correspond to predecessors in order
-            for i, use_op in enumerate(phi_inst.operands[1:]):
-                pred_bb = self._preds[i]
-                incoming = IRRegs.get(use_op.GetIRRegName(lifter)) if use_op.IsReg else ConstMem.get(use_op.ArgOffset)
-                phi_val.add_incoming(incoming, BlockMap[pred_bb])
-            IRRegs[def_op.GetIRRegName(lifter)] = phi_val
-            idx += 1
+        for inst in self.instructions:
+            inst.Lift(lifter, IRBuilder, IRRegs, ConstMem, BlockMap)
 
+    def LiftPhiNodes(self, lifter, IRBuilder, IRRegs, BlockMap):
+        IRBlock = BlockMap[self]
 
-        # Lift remaining instructions until a branch or end
-        for inst in self.instructions[idx:]:
-            if inst.IsBranch():
-                true_br = self.GetTrueBranch(inst)
-                false_br = self.GetFalseBranch(inst)
-                try:
-                    inst.LiftBranch(lifter, IRBuilder, IRRegs, BlockMap[true_br], BlockMap[false_br], ConstMem)
-                except Exception as e:
-                    lifter.lift_errors.append(e)
-                break
-            inst.Lift(lifter, IRBuilder, IRRegs, ConstMem)
+        for i, inst in enumerate(self.instructions):
+            if inst.opcodes[0] == "PHI" or inst.opcodes[0] == "PHI64":
+                IRInst = IRBlock.instructions[i]
+
+                # Incoming operands correspond to predecessors in order
+                for i, op in enumerate(inst._operands[1:]):
+                    pred_bb = self._preds[i]
+                    if op.IsZeroReg:
+                        val = lifter.ir.Constant(op.GetIRType(lifter), 0)
+                    elif op.IsPT:
+                        val = lifter.ir.Constant(op.GetIRType(lifter), 1)
+                    else:
+                        val = IRRegs[op.GetIRRegName(lifter)]
+                    IRInst.add_incoming(val, BlockMap[pred_bb])
 
     def dump(self):
         print("BB Addr: ", self.addr_content)

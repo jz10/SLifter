@@ -92,7 +92,7 @@ class SaSSParserBase:
         # Process the last function
         if CurrFunc != None:
             # Wrap up previous function by creating control-flow graph
-            CurrFunc.blocks = self.CreateCFG(self.SplitBlocks(Insts))
+            CurrFunc.blocks = self.CreateCFG(Insts)
 
             # Add the parsed function
             Funcs.append(CurrFunc)
@@ -106,7 +106,7 @@ class SaSSParserBase:
             if ("Function : " in line):
                 # Wrap up previous function by creating control-flow graph
                 if PrevFunc != None:
-                    CurrFunc.blocks = self.CreateCFG(self.SplitBlocks(Insts))
+                    CurrFunc.blocks = self.CreateCFG(Insts)
                     
                 # Check the function name
                 items = line.split(' : ')
@@ -120,65 +120,6 @@ class SaSSParserBase:
     def ParseFuncBody(self, line, Insts):
         raise NoParsingEffort
 
-    # Split basic block from the list instruction
-    def SplitBlocks(self, Insts):
-        BBs = []
-        BranchBBs = []
-
-        # Initialize current basic block
-        CurrBB = None
-        PredBB = None
-        BranchBB = None
-        
-        for Inst in Insts:
-            if Inst.InCondPath():
-                if not BranchBB.IsInitialized():
-                    # Create the new branch basic block
-                    BranchBB.Init(Inst.id, Inst.pflag)
-
-                # Add instruction into branch basic block
-                BranchBB.AppendInst(Inst)
-                
-            else:
-                if CurrBB == None:
-                    # Create the new basic block
-                    CurrBB = BasicBlock(Inst.id, None)
-                    BBs.append(CurrBB)
-
-                    # Add branch connection
-                    if PredBB != None:
-                        # Setup cpnnection
-                        PredBB.AddSucc(CurrBB)
-                        CurrBB.AddPred(PredBB)
-
-                # Add instruction into main basic block
-                CurrBB.AppendInst(Inst)
-
-                if Inst.IsBranch():
-                    # Set predecessor
-                    PredBB = CurrBB
-
-                    # Cleanup current basic block and branch basic block
-                    CurrBB = None
-
-                    if BranchBB != None and BranchBB.IsEmpty():
-                        # The previous branch instruction does not make corresponding branch BB yet, so it will follow with current branch instruction
-                        # Setup the predecessor and successor for branch basic block
-                        PredBB.AddSucc(BranchBB)
-                        BranchBB.AddPred(PredBB)
-                    else:
-                        # Create an empty basic block
-                        BranchBB = BasicBlock(None, None)
-                        BranchBBs.append(BranchBB)
-
-                        # Setup the predecessor and successor for branch basic block
-                        PredBB.AddSucc(BranchBB)
-                        BranchBB.AddPred(PredBB)
-
-        for BranchBB in BranchBBs:
-            BBs.append(BranchBB)
-            
-        return BBs
 
 
     # Retrieve instruction ID
@@ -251,7 +192,7 @@ class SaSSParserBase:
             Operands.append(self.ParseOperand(Operand_Content, CurrFunc))
 
         # Create instruction
-        return Instruction(InstID, Opcodes, Operands, Opcode_Content + " " + Operands_Detail)
+        return Instruction(InstID, Opcodes, Operands, Opcode_Content + " " + Operands_Detail, None)
 
     # Parse operand
     def ParseOperand(self, Operand_Content, CurrFunc):
@@ -362,14 +303,111 @@ class SaSSParserBase:
        raise NoParsingEffort
 
     #Create the control-flow graph
-    def CreateCFG(self, Blocks):
+    def CreateCFG(self, Insts):
+        # Preprocess: branch may target non-instruction address
+        # Align address upward to the next instruction
+        addr_set  = {int(inst.id,16) for inst in Insts} 
+        addr_list = sorted(a for a in addr_set)
+        def _align_up_to_inst(addr_hex):
+            addr = int(addr_hex, 16)
+            max_addr = addr_list[-1]
+
+            while addr not in addr_set and addr <= max_addr:
+                addr += 0x8 
+            return addr
+        for inst in Insts:
+            if inst.IsBranch():
+                target_addr = _align_up_to_inst(inst.operands[0].Name.zfill(4))
+                inst.operands[0]._Name = format(target_addr, '04x')
+                inst.operands[0]._ImmediateValue = target_addr
+
+        Blocks = []
+
+        # Identify leaders
+        leaders = set()
+        pflags = {}
+        for i, inst in enumerate(Insts):
+            if inst.IsReturn() or inst.IsExit():
+                if i + 1 < len(Insts):
+                    leaders.add(Insts[i+1].id)
+            if inst.IsBranch():
+                leaders.add(inst.operands[0].Name.zfill(4))
+            if inst.Predicated():
+                leaders.add(Insts[i].id)
+                pflags[Insts[i].id] = inst.pflag
+                if i + 1 < len(Insts):
+                    leaders.add(Insts[i+1].id)
+
+        # Create basic blocks
+        BlockInsts = []
+        pflag = None
+        for inst in Insts:
+            if inst.id in leaders:
+                if BlockInsts:
+                    if not BlockInsts or (not BlockInsts[-1].IsExit() and not BlockInsts[-1].IsReturn() and not BlockInsts[-1].IsBranch() and not BlockInsts[-1].IsSetPredicate()):
+                        DestOp = Operand(inst.id, None, None, -1, False, False, False, True, int(inst.id, 16))
+                        NewInst = Instruction(
+                            id=f"branch_{int(inst.id, 16)}",
+                            opcodes=["BRA"],
+                            operands=[DestOp],
+                            inst_content=f"BRA {DestOp.Name}",
+                            parentBB=None
+                        )
+                        BlockInsts.append(NewInst)
+
+                    Block = BasicBlock(BlockInsts[0].id, pflag, BlockInsts)
+                    pflag = pflags.get(inst.id, None)
+                    Blocks.append(Block)
+                BlockInsts = [inst]
+            else:
+                BlockInsts.append(inst)
+
+        # Set parent for each instruction
+        for block in Blocks:
+            for inst in block.instructions:
+                inst._Parent = block
+
+        # Preprocessor and sucessors
+        idToBlock = {block.addr_content: block for block in Blocks}
+
+        for i, block in enumerate(Blocks):
+            last = block.instructions[-1]
+            first = block.instructions[0]
+
+            # Add fallthrough if predicated
+            if first.Predicated():
+                if i + 1 < len(Blocks) and i - 1 >= 0:
+                    nextBlock = Blocks[i + 1]
+                    prevBlock = Blocks[i - 1]
+                    prevBlock.AddSucc(nextBlock)
+                    nextBlock.AddPred(prevBlock)
+
+            # If the last instruction is a return or exit, no successors
+            if last.IsReturn() or last.IsExit():
+                continue
+
+            elif last.IsBranch():
+                targetBlock = idToBlock.get(last.operands[0].Name.zfill(4))
+                if targetBlock is None:
+                    continue
+
+                block.AddSucc(targetBlock)
+                targetBlock.AddPred(block)
+            
+            else:
+                if i + 1 < len(Blocks):
+                    nextBlock = Blocks[i + 1]
+                    block.AddSucc(nextBlock)
+                    nextBlock.AddPred(block)
+
         # No need to process single basic block case
         if len(Blocks) == 1:
             return Blocks
 
         for BB in Blocks:
-            BB.EraseRedundency()
-            # BB.dump()
+            BB.EraseRedundency() # Remove NOP and dead instructions after exit(spin-loop senteniel)
+            if BB.Isolated():
+                Blocks.remove(BB)
             
         return Blocks
     

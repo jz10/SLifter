@@ -10,7 +10,11 @@ class SSA(SaSSTransform):
 
 
     def ProcessFunc(self, function):
+        print("=== Start of SSA ===")
+        print()
+
         WorkList = self.TraverseCFG(function)
+
 
         InRegsMap = {}
         OutRegsMap = {}
@@ -28,9 +32,6 @@ class SSA(SaSSTransform):
 
             for BB in WorkList:
                 Changed |= self.ProcessBB(BB, InRegsMap, OutRegsMap, PhiNodesMap, function)
-
-        print("=== Start of SSA ===")
-        print()
         self.InsertPhiNodes(WorkList, PhiNodesMap)
 
         self.RemapRegisters(WorkList)
@@ -147,9 +148,11 @@ class SSA(SaSSTransform):
     def GenerateInSetWithPhiNodes(self, BB, register_versions, PhiNodesMap):
         incoming_registers = {}
         for reg_name, predecessor_versions in register_versions.items():
-            if len(predecessor_versions) == 1:
-                incoming_registers[reg_name] = predecessor_versions[0][1]
-            elif len(predecessor_versions) > 1:
+            
+            unique_versions = {ver for _, ver in predecessor_versions}
+            if len(unique_versions) == 1:
+                incoming_registers[reg_name] = next(iter(unique_versions))
+            elif len(unique_versions) > 1:
                 phi_version = reg_name + "@phi_" + str(BB.addr)
                 incoming_registers[reg_name] = phi_version
                 PhiNodesMap[BB][reg_name] = (phi_version, predecessor_versions)
@@ -157,7 +160,6 @@ class SSA(SaSSTransform):
 
     def InsertPhiNodes(self, WorkList, PhiNodesMap):
         for basic_block in WorkList:
-            self.ClearExistingPhiInstructions(basic_block)
             
             if not PhiNodesMap[basic_block]:
                 continue
@@ -199,7 +201,8 @@ class SSA(SaSSTransform):
             id=f"phi_{basic_block.addr}_{reg_name}",
             opcodes=["PHI"],
             operands=phi_operands,
-            inst_content=inst_content
+            inst_content=inst_content,
+            parentBB=basic_block
         )
 
     def PrintRenamedInstructions(self, WorkList):
