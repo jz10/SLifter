@@ -207,7 +207,7 @@ class SaSSParserBase:
         IsImmediate = False
         ImmediateValue = None
         # Check if it is an immediate value
-        if Operand_Content.startswith('0x'):
+        if Operand_Content.startswith('0x') or Operand_Content.startswith('-0x'):
             IsImmediate = True
             Operand_Content = Operand_Content.replace('0x', '')
             # Convert to integer

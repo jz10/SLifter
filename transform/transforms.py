@@ -7,6 +7,8 @@ from transform.inttoptr import IntToPtr
 from transform.pack64 import Pack64
 from transform.defuse_analysis import DefUseAnalysis
 from transform.mov_eliminate import MovEliminate
+from transform.dce import DCE
+from transform.fp_hack import FPHack
 
 class Transforms:
     def __init__(self, name):
@@ -23,6 +25,8 @@ class Transforms:
         self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add xmad to mul64 pass
         self.passes.append(XmadToImad("xmad to mul64"))
+        # Add FP hack pass
+        self.passes.append(FPHack("FP hack"))
         # Add passes
         # self.passes.append(SSA("SSA"))
         # Add def-use analysis pass
@@ -37,6 +41,10 @@ class Transforms:
         self.passes.append(SSA("SSA"))
         # Add int to ptr pass
         self.passes.append(IntToPtr("int to ptr"))
+        # Add def-use analysis pass again
+        self.passes.append(DefUseAnalysis("def-use analysis"))
+        # Add dead code elimination pass
+        self.passes.append(DCE("dead code elimination"))
         # Add SSA pass again
         self.passes.append(SSA("SSA"))
         # Add type analysis pass

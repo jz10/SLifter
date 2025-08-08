@@ -139,6 +139,38 @@ class Operand:
     def Skipped(self):
         return self._Skipped
     
+    def __str__(self):
+        if self.IsMemAddr:
+            if self._MemAddrOffset:
+                return f"[{self._Reg}+{self._MemAddrOffset}]"
+            else:
+                return f"[{self._Reg}]"
+        elif self.IsReg:
+            if self._NotReg:
+                s =  f"~{self._Reg}"
+            elif self._NegativeReg:
+                s =  f"-{self._Reg}"
+            elif self._AbsReg:
+                s =  f"|{self._Reg}|"
+            else:
+                s = self._Reg
+
+            if self._Suffix:
+                return f"{s}.{self._Suffix}"
+            else:
+                return s
+        elif self.IsArg:
+            return f"c[0x0][0x{self._ArgOffset:x}]"
+        elif self.IsSpecialReg:
+            return self._Name
+        elif self.IsImmediate:
+            return hex(self._ImmediateValue)
+        else:
+            return self._Name if self._Name else "<??>"
+        
+    def __repr__(self):
+        return self.__str__()
+
     def SetReg(self, RegName):
         if not self.IsReg:
             raise InvalidOperandException("Cannot set register for non-register operand")

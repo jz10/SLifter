@@ -173,9 +173,37 @@ class OperAggregate(SaSSTransform):
                 for i in range(len(Inst1.GetUses())):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[i]], Inst2.ReachingDefs[Inst2.GetUses()[i]]))
 
-            # (SHR R3 R2.reuse 0x1e, ISCADD R2.CC R2 c[0x0][0x150] 0x2, IADD.X R3 R3 c[0x0][0x154]) => (IMAD64 R2, R2, c[0x0][0x150], 0x2)
-            # This is special because there are three instructions involved
+            elif Inst1.opcodes[0] == "SHL" and Inst2.opcodes[0] == "SHF" and Inst2.opcodes[1] == "L":
+                # (SHR R13, R2.reuse, 0x1f, SHL R12, R2.reuse, 0x2, SHF.L.U64 R13, R2, 0x2, R13) => (SHL64 R12, R2, 0x2)
+                # 0x1f indicates sign bit extraction
+                # This is a sign extended 64bit shift left that takes a 32bit input 
+                Inst3 = Inst2.ReachingDefs[Inst2.GetUses()[2]]  # SHR instruction
+
+                dest_op = Inst1.GetDef().Clone()
+                src_op = Inst1.GetUses()[0].Clone()
+                src_op2 = Inst1.GetUses()[1].Clone()
+                inst = Instruction(
+                    id=f"{Inst1.id}_shl64",
+                    opcodes=["SHL64"],
+                    operands=[dest_op, src_op, src_op2],
+                    inst_content=f"SHL64 {dest_op.Name}, {src_op.Name}, {src_op2.Name}",
+                    parentBB=Inst1.parent
+                )
+
+                InsertInsts[Inst3] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+                RemoveInsts.add(Inst3)
+
+                # Special case: Instruction pairs should end at this point
+                # This pattern always start from a 32-bit register
+                Cast64Inserts.add(Inst3)
+                continue
+
             elif Inst1.opcodes[0] == "ISCADD" and Inst2.opcodes[0] == "IADD":
+                # (SHR R3 R2.reuse 0x1e, ISCADD R2.CC R2 c[0x0][0x150] 0x2, IADD.X R3 R3 c[0x0][0x154]) => (IMAD64 R2, R2, c[0x0][0x150], 0x2)
+                # Three instructions involved
                 Inst3 = Inst2.ReachingDefs[Inst2.GetUses()[0]] # SHR instruction
 
                 if Inst3.opcodes[0] != "SHR":

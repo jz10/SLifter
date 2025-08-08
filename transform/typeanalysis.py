@@ -5,11 +5,13 @@ class TypeAnalysis(SaSSTransform):
     def __init__(self, name):
         super().__init__(name)
 
-        # PROP means it is the same type as the other operands
-        # PROP_PTR means it is a pointer to the other operands
+        # operands with PROP must have the same type
+        # operands with PROP_PTR must have the same type but with _PTR suffix
+        # operands with ANY can have any type
         self.instructionTypeTable = {
             "FADD": ["Float32", "Float32", "Float32", "NA", "NA"],
             "FFMA": ["Float32", "Float32", "Float32", "Float32", "NA"],
+            "MUFU": ["Float32", "Float32", "Float32", "NA", "NA"],
             "S2R": ["Int32", "Int32", "Int32", "NA", "NA"],
             "IMAD": ["Int32", "Int32", "Int32", "Int32", "NA"],
             "IADD3": ["Int32", "Int32", "Int32", "Int32", "NA"],
@@ -39,6 +41,7 @@ class TypeAnalysis(SaSSTransform):
             "SYNC": ["NA", "NA", "NA", "NA", "NA"],
             "SSY": ["NA", "NA", "NA", "NA", "NA"],
             "DEPBAR": ["NA", "NA", "NA", "NA", "NA"],
+            "LOP32I": ["Int32", "Int32", "Int32", "NA", "NA"],
 
             # Dummy instruction types
             "PHI": ["PROP", "PROP", "PROP", "PROP", "NA"],
@@ -51,6 +54,7 @@ class TypeAnalysis(SaSSTransform):
             "MOV64": ["Int64", "Int64", "NA", "NA", "NA"],
             "IADD32I64": ["Int64", "Int64", "Int64", "NA", "NA"],
             "PHI64": ["Int64", "Int64", "Int64", "Int64", "Int64"],
+            "BITCAST": ["ANY", "ANY", "NA", "NA", "NA"],
         }
         
         # self.flagOverrideTable = {
@@ -199,7 +203,7 @@ class TypeAnalysis(SaSSTransform):
         for i, operand in enumerate(Inst.operands):
             typeDesc = self.ResolveType(Inst, i)
 
-            if typeDesc != "NA" and "PROP" not in typeDesc:
+            if typeDesc != "NA" and "PROP" not in typeDesc and typeDesc != "ANY":
 
                 if operand.Name in OpTypes and OpTypes[operand.Name] != typeDesc:
                     print(f"Warning: Type mismatch for {operand._Name} in {Inst._InstContent}: {OpTypes[operand.Name]} vs {typeDesc}")
