@@ -56,14 +56,22 @@ class OperAggregate(SaSSTransform):
             if Inst1.opcodes[0] == "SHL" and Inst2.opcodes[0] == "SHR":
                 # First opcode SHL, second opcode SHR
                 # First use operand same register, second use operand sums up to 32
+                # Case 1
                 # (SHL R6, R0.reuse, 0x2 ; SHR R0, R0, 0x1e ;) => SHL64 R6, R0, 0x2
+                # Case 2
+                # (SHL R6, R0.reuse, 0x2 ; SHR.U32 R0, R0, 0x1e ;) => SHL64.U32 R6, R0, 0x2
+
+                unsigned = "U32" in Inst2.opcodes
+                opcodes = ["SHL64"]
+                if unsigned:
+                    opcodes.append("U32")
 
                 dest_op = Inst1.GetDef().Clone()
                 src_op = Inst2.GetUses()[0].Clone()
                 imm_op = Inst1.GetUses()[1].Clone()
                 inst = Instruction(
                     id=f"{Inst1.id}_shl64",
-                    opcodes=["SHL64"],
+                    opcodes=opcodes,
                     operands=[dest_op, src_op, imm_op],
                     inst_content=f"SHL64 {dest_op.Name}, {src_op.Name}, {imm_op.Name}",
                     parentBB=Inst1.parent

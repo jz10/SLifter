@@ -66,7 +66,7 @@ class Transforms:
                     print(f"{succ.addr_content},", end="")
                 print(f"]")
                 for inst in block.instructions:
-                    print(f"{inst.id}    {inst}")
+                    print(f"    {inst.id}    {inst}")
             print("")
 
             

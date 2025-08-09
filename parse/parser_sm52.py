@@ -42,8 +42,8 @@ class SaSSParser_SM52(SaSSParserBase):
                 inst.SetCtlCode(CtlCode)
                 # Remove the control code from temprory storage
                 self.CtlCodes.remove(CtlCode)
-            else:
-                raise UnmatchedControlCode
+            # else:
+            #     raise UnmatchedControlCode
             
             # Add instruction into list
             Insts.append(inst)

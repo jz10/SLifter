@@ -37,8 +37,8 @@ class Operand:
             # unary negation flag (e.g. -R7)
             self._Reg = Reg[1:]
             self._NegativeReg = True
-        elif Reg and Reg.startswith('~'):
-            # bitwise NOT flag (e.g. ~R7)
+        elif Reg and (Reg.startswith('~') or Reg.startswith('!')):
+            # bitwise NOT flag (e.g. ~R7, !P0)
             self._Reg = Reg[1:]
             self._NotReg = True
         elif Reg and Reg.startswith('|') and Reg.endswith('|'):

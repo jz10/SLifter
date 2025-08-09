@@ -82,9 +82,9 @@ class Instruction:
         return False
 
     def IsBranch(self):
-        if self._opcodes[0] == "BRA":
+        if self._opcodes[0] == "BRA" or self._opcodes[0] == "PBRA":
             return True
-        if len(self._opcodes) > 1 and self._opcodes[1] == "BRA":
+        if len(self._opcodes) > 1 and (self._opcodes[1] == "BRA" or self._opcodes[1] == "PBRA"):
             return True
         return False
     
@@ -201,7 +201,7 @@ class Instruction:
     # Get use operand
     def GetUses(self):
         Uses = []
-        startIdx = 0 if self.IsStore() else 1
+        startIdx = 0 if self.IsStore() or self.IsBranch() else 1
         if len(self._operands) > 1:
             for i in range(startIdx, len(self._operands)):
                 Uses.append(self._operands[i])
@@ -398,6 +398,12 @@ class Instruction:
         elif opcode == "IADD32I" or opcode == "IADD32I64":
             dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
             v1 = _get_val(op1, "iadd32i_lhs")
+            
+            # TODO: temporary fix
+            def sx(v, n):
+                v &= (1 << n) - 1
+                return (v ^ (1 << (n-1))) - (1 << (n-1))
+            op2._ImmediateValue = sx(int(op2.Name, 16), 24)
             v2 = _get_val(op2, "iadd32i_rhs")
             IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.add(v1, v2, "iadd32i")
 
@@ -469,7 +475,15 @@ class Instruction:
                 raise UnsupportedInstructionException
         
         elif self._opcodes[Idx] == "LOP32I":
-            raise UnsupportedInstructionException
+            dest, a, b = self._operands[0], self._operands[1], self._operands[2]
+            v1 = _get_val(a, "lop32i_a")
+            v2 = _get_val(b, "lop32i_b")
+            func = self._opcodes[Idx + 1]
+
+            if func == "AND":
+                IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.and_(v1, v2, "lop32i_and")
+            else:
+                raise UnsupportedInstructionException
         
         elif self._opcodes[Idx] == "BFE":
             raise UnsupportedInstructionException
@@ -502,7 +516,21 @@ class Instruction:
             dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
             v1 = _get_val(op1, "imnmx_lhs")
             v2 = _get_val(op2, "imnmx_rhs")
-            cond = IRBuilder.icmp_signed('>', v1, v2, "imnmx_cmp")
+
+            isUnsigned = "U32" in self._opcodes
+            isMax = "MXA" in self._opcodes
+
+            if isUnsigned:
+                if isMax:
+                    cond = IRBuilder.icmp_unsigned('>', v1, v2, "imnmx_cmp")
+                else:
+                    cond = IRBuilder.icmp_unsigned('<', v1, v2, "imnmx_cmp")
+            else:
+                if isMax:
+                    cond = IRBuilder.icmp_signed('>', v1, v2, "imnmx_cmp")
+                else:
+                    cond = IRBuilder.icmp_signed('<', v1, v2, "imnmx_cmp")
+
             IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.select(cond, v1, v2, "imnmx_max")
                 
         elif self._opcodes[Idx] == "PSETP":
@@ -516,12 +544,24 @@ class Instruction:
                     
         elif self._opcodes[Idx] == "F2I":
             dest, op1 = self._operands[0], self._operands[1]
-            val = IRBuilder.fptosi(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "f2i")
+
+            isUnsigned = "U32" in self._opcodes
+
+            if isUnsigned:
+                val = IRBuilder.fptoui(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "f2i")
+            else:
+                val = IRBuilder.fptosi(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "f2i")
             IRRegs[dest.GetIRRegName(lifter)] = val
                     
         elif self._opcodes[Idx] == "I2F":
             dest, op1 = self._operands[0], self._operands[1]
-            val = IRBuilder.sitofp(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "i2f")
+
+            isUnsigned = "U32" in self._opcodes
+
+            if isUnsigned:
+                val = IRBuilder.uitofp(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "i2f")
+            else:
+                val = IRBuilder.sitofp(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "i2f")
             IRRegs[dest.GetIRRegName(lifter)] = val
                     
         elif self._opcodes[Idx] == "MUFU":
@@ -584,16 +624,28 @@ class Instruction:
             # Remove U32 from opcodes
             # Currently just assuming every int are signed. May be dangerous?  
             opcodes = [opcode for opcode in self._opcodes if opcode != "U32"]
+            isUnsigned = "U32" in self._opcodes
 
             for i in range(1, len(opcodes)):
                 temp = _get_val(self._operands[i + 2], f"branch_operand_{i}")
                 if opcodes[i] == "AND":
                     r = IRBuilder.and_(r, temp, f"branch_and_{i}")
                 else:
-                    r = IRBuilder.icmp_signed(lifter.GetCmpOp(opcodes[i]), r, temp, f"branch_cmp_{i}")
+                    if isUnsigned:
+                        r = IRBuilder.icmp_unsigned(lifter.GetCmpOp(opcodes[i]), r, temp, f"branch_cmp_{i}")
+                    else:
+                        r = IRBuilder.icmp_signed(lifter.GetCmpOp(opcodes[i]), r, temp, f"branch_cmp_{i}")
+
+            pred = self._operands[0]
+            IRRegs[pred.GetIRRegName(lifter)] = r
+
+        elif self._opcodes[Idx] == "PBRA":
+            pred = self._operands[0]
+
+            cond = _get_val(pred, "cond")
 
             TrueBr, FalseBr = self.parent.GetBranchPair(self)
-            IRBuilder.cbranch(r, BlockMap[TrueBr], BlockMap[FalseBr])
+            IRBuilder.cbranch(cond, BlockMap[TrueBr], BlockMap[FalseBr])
 
         elif self._opcodes[Idx] == "PACK64":
             dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]

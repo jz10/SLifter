@@ -86,6 +86,12 @@ class BasicBlock:
         for Inst in self.instructions:
             Inst.GetRegs(Regs, lifter)
 
+    def GetTerminator(self):
+        return self.instructions[-1]
+
+    def SetTerminator(self, Inst):
+        self.instructions[-1] = Inst
+
     def GetBranchPair(self, Inst):
         # Get the branch flag from branch instruction, i.e. P0 or !P0
         PFlag = Inst.GetBranchFlag()

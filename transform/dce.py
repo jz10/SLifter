@@ -19,7 +19,7 @@ class DCE(SaSSTransform):
             "LDG", "LD", 
             "CALL", "RET", "EXIT",
             "ISETP",
-            "BRA"])
+            "BRA", "PBRA"])
 
         live = []
         queue = deque()

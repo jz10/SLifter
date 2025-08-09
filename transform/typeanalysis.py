@@ -55,11 +55,8 @@ class TypeAnalysis(SaSSTransform):
             "IADD32I64": ["Int64", "Int64", "Int64", "NA", "NA"],
             "PHI64": ["Int64", "Int64", "Int64", "Int64", "Int64"],
             "BITCAST": ["ANY", "ANY", "NA", "NA", "NA"],
+            "PBRA": ["Int1", "NA", "NA", "NA", "NA"],
         }
-        
-        # self.flagOverrideTable = {
-        #     "WIDE": ["Int64", "NA", "NA", "NA", "NA"]
-        # }
 
     def apply(self, module):
         for func in module.functions:

@@ -15,6 +15,8 @@ class Lifter :
             return ">="
         elif Opcode == "EQ":
             return "=="
+        elif Opcode == "NE":
+            return "!="
         elif Opcode == "LE":
             return "<="
         elif Opcode == "GT":
@@ -26,28 +28,28 @@ class Lifter :
         
             
     def AddIntrinsics(self, llvm_module):
-        # Create thread idx function
-        FuncTy = self.ir.FunctionType(self.ir.IntType(32), [])
+        # # Create thread idx function
+        # FuncTy = self.ir.FunctionType(self.ir.IntType(32), [])
         
-        # Thread index function
-        FuncName = "thread_idx"
-        self.GetThreadIdx = self.ir.Function(llvm_module, FuncTy, FuncName)
+        # # Thread index function
+        # FuncName = "thread_idx"
+        # self.GetThreadIdx = self.ir.Function(llvm_module, FuncTy, FuncName)
         
-        # Block dimension function  
-        FuncName = "block_dim"
-        self.GetBlockDim = self.ir.Function(llvm_module, FuncTy, FuncName)
+        # # Block dimension function  
+        # FuncName = "block_dim"
+        # self.GetBlockDim = self.ir.Function(llvm_module, FuncTy, FuncName)
         
-        # Block index function
-        FuncName = "block_idx" 
-        self.GetBlockIdx = self.ir.Function(llvm_module, FuncTy, FuncName)
+        # # Block index function
+        # FuncName = "block_idx" 
+        # self.GetBlockIdx = self.ir.Function(llvm_module, FuncTy, FuncName)
         
-        # Lane ID function
-        FuncName = "lane_id"
-        self.GetLaneId = self.ir.Function(llvm_module, FuncTy, FuncName)
+        # # Lane ID function
+        # FuncName = "lane_id"
+        # self.GetLaneId = self.ir.Function(llvm_module, FuncTy, FuncName)
         
-        # Warp ID function
-        FuncName = "warp_id"
-        self.GetWarpId = self.ir.Function(llvm_module, FuncTy, FuncName)
+        # # Warp ID function
+        # FuncName = "warp_id"
+        # self.GetWarpId = self.ir.Function(llvm_module, FuncTy, FuncName)
 
         # Constant memory
         ArrayTy =  self.ir.ArrayType(self.ir.IntType(32), 1024)

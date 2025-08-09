@@ -304,7 +304,7 @@ class SaSSParserBase:
 
     #Create the control-flow graph
     def CreateCFG(self, Insts):
-        # Preprocess: branch may target non-instruction address
+        # Preprocess 1: branch may target non-instruction address
         # Align address upward to the next instruction
         addr_set  = {int(inst.id,16) for inst in Insts} 
         addr_list = sorted(a for a in addr_set)
@@ -320,6 +320,28 @@ class SaSSParserBase:
                 target_addr = _align_up_to_inst(inst.operands[0].Name.zfill(4))
                 inst.operands[0]._Name = format(target_addr, '04x')
                 inst.operands[0]._ImmediateValue = target_addr
+
+        # Preprocess 2: insert NOP so predicated instructions are not adjacent
+        NewInsts = []
+        InstIdCounter = int(Insts[-1].id, 16)
+        for i, inst in enumerate(Insts):
+            if i > 0 and inst.Predicated() and Insts[i-1].Predicated():
+                # Insert NOP instruction
+                nop_inst = Instruction(
+                    id=f"{hex(InstIdCounter + 1).zfill(4)}",
+                    opcodes=["NOP"],
+                    operands=[],
+                    inst_content="NOP",
+                    parentBB=None
+                )
+                NewInsts.append(nop_inst)
+            NewInsts.append(inst)
+        Insts = NewInsts
+
+        print("Debug start!")
+        for Inst in Insts:
+            print(f"Inst: {Inst.id} {Inst}")
+        print("Debug end!")
 
         Blocks = []
 
@@ -344,7 +366,8 @@ class SaSSParserBase:
         for inst in Insts:
             if inst.id in leaders:
                 if BlockInsts:
-                    if not BlockInsts or (not BlockInsts[-1].IsExit() and not BlockInsts[-1].IsReturn() and not BlockInsts[-1].IsBranch() and not BlockInsts[-1].IsSetPredicate()):
+                    # Make sure every block contains a terminator
+                    if not BlockInsts or (not BlockInsts[-1].IsExit() and not BlockInsts[-1].IsReturn() and not BlockInsts[-1].IsBranch()):
                         DestOp = Operand(inst.id, None, None, -1, False, False, False, True, int(inst.id, 16))
                         NewInst = Instruction(
                             id=f"branch_{int(inst.id, 16)}",
@@ -361,11 +384,6 @@ class SaSSParserBase:
                 BlockInsts = [inst]
             else:
                 BlockInsts.append(inst)
-
-        # Set parent for each instruction
-        for block in Blocks:
-            for inst in block.instructions:
-                inst._Parent = block
 
         # Preprocessor and sucessors
         idToBlock = {block.addr_content: block for block in Blocks}
@@ -400,6 +418,32 @@ class SaSSParserBase:
                     block.AddSucc(nextBlock)
                     nextBlock.AddPred(block)
 
+
+        # Add conditional branch for the predecessor of the predicated instruction
+        for block in Blocks:
+            firstInst = block.instructions[0]
+            if firstInst.Predicated():
+                
+                op = Operand(firstInst.pflag, firstInst.pflag, None, -1, True, False, False)
+                NewInst = Instruction(
+                    id=f"pbra_{firstInst.id}",
+                    opcodes=["PBRA"],
+                    operands=[op],
+                    inst_content=f"PBRA {firstInst.pflag}",
+                    parentBB=None
+                )
+
+                if len(block._preds) != 1:
+                    print(f"Warning: predicate block predecessor != 1")
+
+                predBlock = block._preds[0]
+                predBlock.SetTerminator(NewInst)
+
+        # Set parent for each instruction
+        for block in Blocks:
+            for inst in block.instructions:
+                inst._Parent = block
+                
         # No need to process single basic block case
         if len(Blocks) == 1:
             return Blocks
