@@ -26,10 +26,7 @@ class DCE(SaSSTransform):
 
         for block in func.blocks:
             for inst in block.instructions:
-                Idx = 0
-                if inst.IsPredicateReg(inst._opcodes[Idx]):
-                    Idx += 1
-                if inst.opcodes and inst.opcodes[Idx] in side_effect_instructions: 
+                if inst.opcodes and inst.opcodes[0] in side_effect_instructions:
                     live.append(inst)
                     queue.append(inst)
         

@@ -183,8 +183,6 @@ class SaSSParserBase:
     def ParseInstruction(self, InstID, Opcode_Content, PFlag, Operands_Content, Operands_Detail, CurrFunc):
         # Parse opcodes
         Opcodes = Opcode_Content.split('.')
-        if PFlag != None:
-            Opcodes.insert(0, PFlag)
 
         # Parse operands
         Operands = []
@@ -192,7 +190,7 @@ class SaSSParserBase:
             Operands.append(self.ParseOperand(Operand_Content, CurrFunc))
 
         # Create instruction
-        return Instruction(InstID, Opcodes, Operands, Opcode_Content + " " + Operands_Detail, None)
+        return Instruction(InstID, Opcodes, Operands, Opcode_Content + " " + Operands_Detail, None, PFlag)
 
     # Parse operand
     def ParseOperand(self, Operand_Content, CurrFunc):
@@ -332,7 +330,8 @@ class SaSSParserBase:
                     opcodes=["NOP"],
                     operands=[],
                     inst_content="NOP",
-                    parentBB=None
+                    parentBB=None,
+                    pflag=None
                 )
                 NewInsts.append(nop_inst)
             NewInsts.append(inst)
@@ -374,7 +373,8 @@ class SaSSParserBase:
                             opcodes=["BRA"],
                             operands=[DestOp],
                             inst_content=f"BRA {DestOp.Name}",
-                            parentBB=None
+                            parentBB=None,
+                            pflag=None
                         )
                         BlockInsts.append(NewInst)
 
@@ -430,7 +430,8 @@ class SaSSParserBase:
                     opcodes=["PBRA"],
                     operands=[op],
                     inst_content=f"PBRA {firstInst.pflag}",
-                    parentBB=None
+                    parentBB=None,
+                    pflag=None
                 )
 
                 if len(block._preds) != 1:

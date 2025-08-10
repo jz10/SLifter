@@ -26,7 +26,8 @@ SR_TO_OFFSET = {
     'SR_CTAID.Z': 0x28,     # blockIdx.z (fake)
     'SR_TID.X': 0x2C,       # threadIdx.x (fake)
     'SR_TID.Y': 0x30,       # threadIdx.y (fake)
-    'SR_TID.Z': 0x34        # threadIdx.z (fake)
+    'SR_TID.Z': 0x34,       # threadIdx.z (fake)
+    'SR_LANEID': 0x38       # lane id (warp lane index)
 }
 
 def process(instructions):

@@ -166,10 +166,7 @@ class TypeAnalysis(SaSSTransform):
         return Changed
     
     def ResolveType(self, Inst, i):
-        idx = 0
-        if Inst.IsPredicateReg(Inst._opcodes[idx]):
-            idx += 1
-        op = Inst._opcodes[idx]
+        op = Inst._opcodes[0]
         typeDesc = self.instructionTypeTable[op][i]
 
         # # Flag overrides
@@ -186,10 +183,7 @@ class TypeAnalysis(SaSSTransform):
 
     def PropagateTypes(self, Inst, OpTypes):
         # Get Inst opcode
-        idx = 0
-        if Inst.IsPredicateReg(Inst._opcodes[idx]):
-            idx += 1
-        op = Inst._opcodes[idx]
+        op = Inst._opcodes[0]
 
         if op not in self.instructionTypeTable:
             print(f"Warning: Unhandled opcode {op} in {Inst._InstContent}")

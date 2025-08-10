@@ -15,7 +15,7 @@ class InvalidTypeException(Exception):
     pass
 
 class Instruction:
-    def __init__(self, id, opcodes, operands, inst_content, parentBB):
+    def __init__(self, id, opcodes, operands, inst_content, parentBB, pflag=None):
         self._id = id
         self._opcodes = opcodes
         self._operands = operands
@@ -25,6 +25,7 @@ class Instruction:
         self._FalseBranch = None
         self._CtlCode = None
         self._Parent = parentBB
+        self._PFlag = pflag
 
         self.Users = set()
         self.ReachingDefs = {}
@@ -47,10 +48,7 @@ class Instruction:
 
     @property
     def pflag(self):
-        if self.IsPredicateReg(self._opcodes[0]):
-            return self._opcodes[0]
-        else:
-            return None
+        return self._PFlag
 
     @property
     def controlcode(self):
@@ -74,73 +72,45 @@ class Instruction:
         self._CtlCode = CtlCode
         
     def IsExit(self):
-        if self._opcodes[0] == "EXIT":
-            return True
-        elif len(self._opcodes) > 1 and self._opcodes[1] == "EXIT":
-            return True
-
-        return False
+        return len(self._opcodes) > 0 and self._opcodes[0] == "EXIT"
 
     def IsBranch(self):
-        if self._opcodes[0] == "BRA" or self._opcodes[0] == "PBRA":
-            return True
-        if len(self._opcodes) > 1 and (self._opcodes[1] == "BRA" or self._opcodes[1] == "PBRA"):
-            return True
-        return False
+        return len(self._opcodes) > 0 and (self._opcodes[0] == "BRA" or self._opcodes[0] == "PBRA")
     
     def IsReturn(self):
-        if self._opcodes[0] == "RET":
-            return True
-        if len(self._opcodes) > 1 and self._opcodes[1] == "RET":
-            return True
-        return False
+        return len(self._opcodes) > 0 and self._opcodes[0] == "RET"
     
     def IsSetPredicate(self):
         return self._opcodes[0] == "ISETP"
     
     def IsPhi(self):
-        Idx = 0
-        if self.IsPredicateReg(self._opcodes[Idx]):
-            Idx += 1
-        return self._opcodes[Idx] == "PHI" or self._opcodes[Idx] == "PHI64"
+        return len(self._opcodes) > 0 and (self._opcodes[0] == "PHI" or self._opcodes[0] == "PHI64")
     
     def DefPredicate(self):
         if len(self.operands)>0 and self.GetDef() and self.GetDef().Reg:
             return self.IsPredicateReg(self.GetDef().Reg)
         
     def Predicated(self):
-        if len(self._opcodes) > 0 and self.IsPredicateReg(self._opcodes[0]):
-            return True
-        return False
+        return self._PFlag is not None
 
     def IsConditionalBranch(self):
         return self.IsBranch() and self.Predicated()
 
     def InCondPath(self):
-        return self.IsPredicateReg(self._opcodes[0])
+        return self.Predicated()
 
     def IsBinary(self):
-        Idx = 0
-        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
-        if self.IsPredicateReg(self._opcodes[Idx]):
-            Idx = Idx + 1
-        return self._opcodes[Idx] == "FFMA" or self._opcodes[Idx] == "FADD" or self._opcodes[Idx] == "XMAD" or self._opcodes[Idx] == "IMAD" or self._opcodes[Idx] == "SHL" or self._opcodes[Idx] == "SHR" or self._opcodes[Idx] == "SHF" or self._opcodes[Idx] == "S2R"
+        return len(self._opcodes) > 0 and (self._opcodes[0] in [
+            "FFMA", "FADD", "XMAD", "IMAD", "SHL", "SHR", "SHF", "S2R"
+        ])
         # return self._opcodes[Idx] == "FFMA" or self._opcodes[Idx] == "FADD" or self._opcodes[Idx] == "XMAD" or self._opcodes[Idx] == "IMAD" or self._opcodes[Idx] == "SHL" or self._opcodes[Idx] == "SHR" or self._opcodes[Idx] == "SHF" or self._opcodes[Idx] == "S2R" or self._opcodes[Idx] == "ISCADD"
     
     
     def IsNOP(self):
-        Idx = 0
-        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
-        if self.IsPredicateReg(self._opcodes[Idx]):
-            Idx = Idx + 1
-        return self._opcodes[Idx] == "NOP"
+        return len(self._opcodes) > 0 and self._opcodes[0] == "NOP"
 
     def IsAddrCompute(self):
-        Idx = 0
-        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
-        if self.IsPredicateReg(self._opcodes[Idx]):
-            Idx = Idx + 1
-        if self._opcodes[Idx] == "IADD":
+        if len(self._opcodes) > 0 and self._opcodes[0] == "IADD":
             # Check operands
             if len(self._operands) == 3:
                 operand = self._operands[2]
@@ -150,18 +120,10 @@ class Instruction:
         return False
 
     def IsLoad(self):
-        Idx = 0
-        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
-        if self.IsPredicateReg(self._opcodes[Idx]):
-            Idx = Idx + 1
-        return self._opcodes[Idx] == "LDG" or self._opcodes[Idx] == "SULD"
+        return len(self._opcodes) > 0 and (self._opcodes[0] == "LDG" or self._opcodes[0] == "SULD")
 
     def IsStore(self):
-        Idx = 0
-        # if self._opcodes[Idx] == "P0" or self._opcodes[Idx] == "!P0":
-        if self.IsPredicateReg(self._opcodes[Idx]):
-            Idx = Idx + 1
-        return self._opcodes[Idx] == "STG" or self._opcodes[Idx] == "SUST"
+        return len(self._opcodes) > 0 and (self._opcodes[0] == "STG" or self._opcodes[0] == "SUST")
 
     # Set all operands as skipped
     def SetSkip(self):
@@ -220,10 +182,8 @@ class Instruction:
         for operand in self._operands:
             operand_strs.append(operand.__str__())
 
-        if self.IsPredicateReg(self.opcodes[0]):
-            content = f"{self.opcodes[0]} {'.'.join(self.opcodes[1:])} {' '.join(operand_strs)}"
-        else:
-            content = f"{'.'.join(self.opcodes)} {' '.join(operand_strs)}"
+        prefix = f"@{self._PFlag} " if self._PFlag else ""
+        content = f"{prefix}{'.'.join(self.opcodes)} {' '.join(operand_strs)}"
 
         return content
     
@@ -270,10 +230,9 @@ class Instruction:
 
 
     def Lift(self, lifter, IRBuilder: ir.IRBuilder, IRRegs, ConstMem, BlockMap):
-        Idx = 0
-        if self.IsPredicateReg(self._opcodes[Idx]):
-            Idx += 1
-        opcode = self._opcodes[Idx]
+        if len(self._opcodes) == 0:
+            raise UnsupportedInstructionException("Empty opcode list")
+        opcode = self._opcodes[0]
 
         def _get_val(op, name=""):
             if op.IsZeroReg:
@@ -464,9 +423,9 @@ class Instruction:
         elif opcode == "LD":
             raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "LOP":
+        elif opcode == "LOP":
             dest, a, b = self._operands[0], self._operands[1], self._operands[2]
-            subop = self._opcodes[Idx + 1]
+            subop = self._opcodes[1] if len(self._opcodes) > 1 else None
             vb = _get_val(b, "lop_b")
 
             if subop == "PASS_B":
@@ -474,33 +433,33 @@ class Instruction:
             else:
                 raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "LOP32I":
+        elif opcode == "LOP32I":
             dest, a, b = self._operands[0], self._operands[1], self._operands[2]
             v1 = _get_val(a, "lop32i_a")
             v2 = _get_val(b, "lop32i_b")
-            func = self._opcodes[Idx + 1]
+            func = self._opcodes[1] if len(self._opcodes) > 1 else None
 
             if func == "AND":
                 IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.and_(v1, v2, "lop32i_and")
             else:
                 raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "BFE":
+        elif opcode == "BFE":
             raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "BFI":
+        elif opcode == "BFI":
             raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "ST":
+        elif opcode == "ST":
             raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "SSY":
+        elif opcode == "SSY":
             pass
 
-        elif self._opcodes[Idx] == "SYNC":
+        elif opcode == "SYNC":
             pass
         
-        elif self._opcodes[Idx] == "BRA":
+        elif opcode == "BRA":
             targetId = self.GetDef().Name.zfill(4)
             for BB, IRBB in BlockMap.items():
                 if BB.addr_content != targetId:
@@ -509,7 +468,7 @@ class Instruction:
             
             IRBuilder.branch(targetBB)
         
-        elif self._opcodes[Idx] == "BRK":
+        elif opcode == "BRK":
             raise UnsupportedInstructionException
         
         elif opcode == "IMNMX":
@@ -533,16 +492,16 @@ class Instruction:
 
             IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.select(cond, v1, v2, "imnmx_max")
                 
-        elif self._opcodes[Idx] == "PSETP":
+        elif opcode == "PSETP":
             raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "PBK":
+        elif opcode == "PBK":
             raise UnsupportedInstructionException
              
-        elif self._opcodes[Idx] == "LEA":
+        elif opcode == "LEA":
             raise UnsupportedInstructionException
                     
-        elif self._opcodes[Idx] == "F2I":
+        elif opcode == "F2I":
             dest, op1 = self._operands[0], self._operands[1]
 
             isUnsigned = "U32" in self._opcodes
@@ -553,7 +512,7 @@ class Instruction:
                 val = IRBuilder.fptosi(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "f2i")
             IRRegs[dest.GetIRRegName(lifter)] = val
                     
-        elif self._opcodes[Idx] == "I2F":
+        elif opcode == "I2F":
             dest, op1 = self._operands[0], self._operands[1]
 
             isUnsigned = "U32" in self._opcodes
@@ -564,9 +523,9 @@ class Instruction:
                 val = IRBuilder.sitofp(IRRegs[op1.GetIRRegName(lifter)], dest.GetIRType(lifter), "i2f")
             IRRegs[dest.GetIRRegName(lifter)] = val
                     
-        elif self._opcodes[Idx] == "MUFU":
+        elif opcode == "MUFU":
             dest, src = self._operands[0], self._operands[1]
-            func = self._opcodes[Idx + 1]
+            func = self._opcodes[1] if len(self._opcodes) > 1 else None
             v = _get_val(src, "mufu_src")
 
             if func == "RCP": # 1/v
@@ -576,22 +535,22 @@ class Instruction:
             else:
                 raise UnsupportedInstructionException
                     
-        elif self._opcodes[Idx] == "IABS":
+        elif opcode == "IABS":
             raise UnsupportedInstructionException
                     
-        elif self._opcodes[Idx] == "LOP3":
+        elif opcode == "LOP3":
             raise UnsupportedInstructionException
                     
-        elif self._opcodes[Idx] == "MOVM":
+        elif opcode == "MOVM":
             raise UnsupportedInstructionException
                     
-        elif self._opcodes[Idx] == "HMMA":
+        elif opcode == "HMMA":
             raise UnsupportedInstructionException
         
-        elif self._opcodes[Idx] == "DEPBAR":
+        elif opcode == "DEPBAR":
             pass
         
-        elif self._opcodes[Idx] == "CS2R":
+        elif opcode == "CS2R":
             # CS2R (Convert Special Register to Register)
             ResOp = self._operands[0]
             ValOp = self._operands[1]
@@ -617,7 +576,7 @@ class Instruction:
                 
                 IRBuilder.store(IRVal, IRResOp)
 
-        elif self._opcodes[Idx] == "ISETP":
+        elif opcode == "ISETP":
             
             r = _get_val(self._operands[2], "branch_operand_0")
 
@@ -639,7 +598,7 @@ class Instruction:
             pred = self._operands[0]
             IRRegs[pred.GetIRRegName(lifter)] = r
 
-        elif self._opcodes[Idx] == "PBRA":
+        elif opcode == "PBRA":
             pred = self._operands[0]
 
             cond = _get_val(pred, "cond")
@@ -647,7 +606,7 @@ class Instruction:
             TrueBr, FalseBr = self.parent.GetBranchPair(self)
             IRBuilder.cbranch(cond, BlockMap[TrueBr], BlockMap[FalseBr])
 
-        elif self._opcodes[Idx] == "PACK64":
+        elif opcode == "PACK64":
             dest, op1, op2 = self._operands[0], self._operands[1], self._operands[2]
             v1 = _get_val(op1)
             v2 = _get_val(op2)
@@ -657,7 +616,7 @@ class Instruction:
             packed = IRBuilder.or_(lo64, hiShift, "pack64_result")
             IRRegs[dest.GetIRRegName(lifter)] = packed
 
-        elif self._opcodes[Idx] == "CAST64":
+        elif opcode == "CAST64":
             dest, op1 = self._operands[0], self._operands[1]
             if not dest.IsReg:
                 raise UnsupportedInstructionException(f"CAST64 expects a register operand, got: {dest}")
@@ -667,7 +626,7 @@ class Instruction:
             val64 = IRBuilder.zext(IRRegs[op1.GetIRRegName(lifter)], ir.IntType(64), "cast64")
             IRRegs[dest.GetIRRegName(lifter)] = val64
 
-        elif self._opcodes[Idx] == "BITCAST":
+        elif opcode == "BITCAST":
             dest, src = self._operands[0], self._operands[1]
             dest_type = self._operands[0].GetIRType(lifter)
 
@@ -677,7 +636,7 @@ class Instruction:
             IRRegs[dest.GetIRRegName(lifter)] = cast_val
 
         else:
-            print("lift instruction: ", self._opcodes[Idx])
+            print("lift instruction: ", opcode)
             raise UnsupportedInstructionException 
 
             

@@ -11,6 +11,7 @@ enum : int {
     SR_GRID_DIM_X = 0x14,
     SR_CTAID_X    = 0x20,
     SR_TID_X      = 0x2C,
+    SR_LANE_ID    = 0x38,
     ARG_BASE      = 0x140
 };
 
@@ -57,6 +58,7 @@ void launchKernel(Func func, int gridDim, int blockDim, Args... args)
             const_mem[SR_GRID_DIM_X] = gridDim;
             const_mem[SR_CTAID_X]    = cta;
             const_mem[SR_TID_X]      = tid;
+            const_mem[SR_LANE_ID]    = (tid & 31);
             func(); 
         }
     }

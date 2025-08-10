@@ -202,7 +202,8 @@ class SSA(SaSSTransform):
             opcodes=["PHI"],
             operands=phi_operands,
             inst_content=inst_content,
-            parentBB=basic_block
+            parentBB=basic_block,
+            pflag=None
         )
 
     def PrintRenamedInstructions(self, WorkList):
