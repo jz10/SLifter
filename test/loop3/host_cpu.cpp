@@ -4,7 +4,7 @@
 #include <random>
 #include "kernel_wrapper.h"
 
-extern "C" void _Z5loop2PKfS0_Pfi();
+extern "C" void _Z5loop3PKfS0_Pfi();
 
 int main() {
     constexpr int N = 1024;
@@ -24,7 +24,7 @@ int main() {
         B[i] = dist(gen);
     }
 
-    launchKernel(_Z5loop2PKfS0_Pfi, gridDim, blockDim,
+    launchKernel(_Z5loop3PKfS0_Pfi, gridDim, blockDim,
                           A, B, C, N);
 
     bool ok = true;
