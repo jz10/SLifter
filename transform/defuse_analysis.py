@@ -41,9 +41,12 @@ class DefUseAnalysis(SaSSTransform):
                         Def.Users.add((Inst, UseOp))
                         Inst.ReachingDefs[UseOp] = Def
 
-                DefOp = Inst.GetDef()
-                if DefOp and DefOp.Reg:
-                    CurrDefs[DefOp.Reg] = {Inst}
+                DefOps = Inst.GetDefs()
+                for DefOp in DefOps:
+                    if DefOp and DefOp.Reg:
+                        if DefOp.Reg == "PT" or DefOp.Reg == "RZ":
+                            continue
+                        CurrDefs[DefOp.Reg] = {Inst}
 
             for SuccBB in BB._succs:
                 Changed = False

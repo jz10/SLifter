@@ -12,7 +12,7 @@ class OperAggregate(SaSSTransform):
 
             InsertInsts = {}
             RemoveInsts = set()
-            Cast64Inserts = set()
+            Cast64Inserts = {}
             Pack64Insts = self.GetPack64Instructions(func)
             
             for Inst in Pack64Insts:
@@ -81,7 +81,8 @@ class OperAggregate(SaSSTransform):
                 RemoveInsts.add(Inst1)
                 RemoveInsts.add(Inst2)
 
-                NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]]))
+                Cast64Inserts.setdefault(Inst1, []).append(0)
+                continue
 
 
             elif Inst1.opcodes[0] == "IADD" and Inst2.opcodes[0] == "IADD":
@@ -206,11 +207,11 @@ class OperAggregate(SaSSTransform):
 
                 # Special case: Instruction pairs should end at this point
                 # This pattern always start from a 32-bit register
-                Cast64Inserts.add(Inst3)
+                Cast64Inserts.setdefault(Inst3, []).append(0)
                 continue
 
             elif Inst1.opcodes[0] == "ISCADD" and Inst2.opcodes[0] == "IADD":
-                # (SHR R3 R2.reuse 0x1e, ISCADD R2.CC R2 c[0x0][0x150] 0x2, IADD.X R3 R3 c[0x0][0x154]) => (IMAD64 R2, R2, c[0x0][0x150], 0x2)
+                # (SHR R3 R2.reuse 0x1e, ISCADD R2.CC R2 c[0x0][0x150] 0x2, IADD.X R3 R3 c[0x0][0x154]) => (IMAD64 R2, 0x4, c[0x0][0x150])
                 # Three instructions involved
                 Inst3 = Inst2.ReachingDefs[Inst2.GetUses()[0]] # SHR instruction
 
@@ -239,8 +240,34 @@ class OperAggregate(SaSSTransform):
 
                 # Special case: Instruction pairs should end at this point
                 # This pattern always start from a 32-bit register
-                Cast64Inserts.add(Inst3)
+                Cast64Inserts.setdefault(Inst3, []).append(0)
                 continue
+
+            elif Inst1 == Inst2 and Inst1.opcodes[0] == "IMAD" and Inst1.opcodes[1] == "WIDE":
+                # IMAD.WIDE R6, R7 = R4, R5, c[0x0][0x168] => IMAD64 R6 = R4, R5, c[0x0][0x168]
+
+                dest_op = Inst1.GetDefs()[0].Clone()
+                src_ops = [op.Clone() for op in Inst1.GetUses()]
+
+                inst = Instruction(
+                    id=f"{Inst1.id}_imad64",
+                    opcodes=["IMAD64"],
+                    operands=[dest_op] + src_ops,
+                    inst_content=f"IMAD64 {dest_op.Name}, {', '.join(op.Name for op in src_ops)}",
+                    parentBB=Inst1.parent
+                )
+
+                InsertInsts[Inst1] = inst
+                RemoveInsts.add(Inst1)
+
+                # Special case: Instruction pairs should end at this point
+                # This pattern always start from two 32-bit register
+                Cast64Inserts.setdefault(Inst1, []).append(0)
+                Cast64Inserts.setdefault(Inst1, []).append(1)
+                continue
+
+            # elif Inst1.opcodes[0] == "LEA" and 
+            # TODO
 
             else:
                 # Current pair not matching known patterns
@@ -251,11 +278,7 @@ class OperAggregate(SaSSTransform):
                 print(f"\tNext pair: {InstPair[0]} and {InstPair[1]}")
 
             for InstPair in NextInstPairs:
-                # If merge point reached, insert CAST64 before the starting instruction pair
-                if InstPair[0] == InstPair[1]:
-                    Cast64Inserts.add(Inst1)
-                else:
-                    Queue.append(InstPair)
+                Queue.append(InstPair)
 
 
     def ApplyChanges(self, func, Pack64Insts, Cast64Inserts, InsertInsts, RemoveInsts):
@@ -276,24 +299,29 @@ class OperAggregate(SaSSTransform):
 
                 if inst in Cast64Inserts:
                     # Create the CAST64 instruction
-                    src_op_name = inst.GetUses()[0].Name
-                    src_op = Operand(src_op_name, src_op_name, None, -1, True, False, False)
+                    use_indices = Cast64Inserts[inst]
 
-                    dest_op_name = src_op_name + "_int64"
-                    dest_op = Operand(dest_op_name, dest_op_name, None, -1, True, False, False)
+                    for use_index in use_indices:
+                        src_op_name = inst.GetUses()[use_index].Name
+                        src_op = Operand(src_op_name, src_op_name, None, -1, True, False, False)
 
-                    inst_content = f"CAST64 {dest_op.Name}, {src_op.Name}"
-                    cast_inst = Instruction(
-                        id=f"{inst.id}_cast64",
-                        opcodes=["CAST64"],
-                        operands=[dest_op, src_op],
-                        inst_content=inst_content,
-                        parentBB=inst.parent
-                    )
-                    new_insts.append(cast_inst)
+                        dest_op_name = src_op_name + "_int64"
+                        dest_op = Operand(dest_op_name, dest_op_name, None, -1, True, False, False)
 
-                    # Update the instruction to use the new register
-                    InsertInsts[inst].GetUses()[0].SetReg(dest_op_name)
+                        inst_content = f"CAST64 {dest_op.Name}, {src_op.Name}"
+                        cast_inst = Instruction(
+                            id=f"{inst.id}_cast64",
+                            opcodes=["CAST64"],
+                            operands=[dest_op, src_op],
+                            inst_content=inst_content,
+                            parentBB=inst.parent
+                        )
+                        new_insts.append(cast_inst)
+
+                        # Update the instruction to use the new register
+                        for UseOp in InsertInsts[inst].GetUses():
+                            if UseOp.Reg == src_op_name:
+                                UseOp.SetReg(dest_op_name)
 
                 if inst in InsertInsts:
                     insertInst = InsertInsts[inst]

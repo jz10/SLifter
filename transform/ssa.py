@@ -94,8 +94,6 @@ class SSA(SaSSTransform):
     def UpdateUseOperands(self, Inst, CurrRegs):
         Uses = Inst.GetUses()
 
-        Def = Inst.GetDef()
-
         for Operand in Uses:
             if Operand.IsReg and Operand.Reg:
                 # Don't rename predicate registers or RZ register
@@ -107,18 +105,19 @@ class SSA(SaSSTransform):
                     Operand._Reg = CurrRegs[RegName]
 
     def UpdateDefinitionOperand(self, Inst, CurrRegs):
-        Def = Inst.GetDef()
-        if not Def or not Def.IsReg:
-            return
 
-        # Don't rename predicate registers or RZ register
-        if Inst.IsPredicateReg(Def.Reg) or Def.Reg == "RZ":
-            return
-        RegName = self.ExtractBaseRegisterName(Def.Reg)
-        NewDef = self.CreateVersionedRegisterName(Def.Reg, Inst)
-        CurrRegs[RegName] = NewDef
-        Def._Name = NewDef
-        Def._Reg = NewDef
+        for Def in Inst.GetDefs():
+            if not Def or not Def.IsReg:
+                continue
+
+            # Don't rename predicate registers or RZ register
+            if Inst.IsPredicateReg(Def.Reg) or Def.Reg == "RZ":
+                continue
+            RegName = self.ExtractBaseRegisterName(Def.Reg)
+            NewDef = self.CreateVersionedRegisterName(Def.Reg, Inst)
+            CurrRegs[RegName] = NewDef
+            Def._Name = NewDef
+            Def._Reg = NewDef
 
     def UpdateOutRegisterSet(self, BB, CurrRegs, OutRegsMap):
         OldOutRegs = OutRegsMap[BB].copy() if BB in OutRegsMap else {}

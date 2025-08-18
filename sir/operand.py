@@ -64,6 +64,17 @@ class Operand:
         return self._IsReg
     
     @property
+    def IsPredicateReg(self):
+        if not self.IsReg:
+            return False
+        
+        if self._Reg[0] == 'P' and self._Reg[1].isdigit():
+            return True
+        if self._Reg[0] == '!' and self._Reg[1] == 'P' and self._Reg[2].isdigit():
+            return True
+        return False
+    
+    @property
     def IsArg(self):
         return self._IsArg
     

@@ -64,9 +64,6 @@ class SaSSParserBase:
 
         lines = modified_lines
 
-        # Code rearrange: if line ISETP Pn is not followed by @Pn, move the line until it is
-        lines = self.rearrange_isetp_lines(lines)
-
         # Main loop that parse the SaSS text file
         for line_num, line in enumerate(lines):
             # Process lines in SaSS text file
@@ -337,11 +334,6 @@ class SaSSParserBase:
             NewInsts.append(inst)
         Insts = NewInsts
 
-        print("Debug start!")
-        for Inst in Insts:
-            print(f"Inst: {Inst.id} {Inst}")
-        print("Debug end!")
-
         Blocks = []
 
         # Identify leaders
@@ -462,39 +454,3 @@ class SaSSParserBase:
             if TargetAddr not in JumpTargets:
                 JumpTargets[TargetAddr] = []
             JumpTargets[TargetAddr].append(CurrBB)
-
-
-    def rearrange_isetp_lines(self, lines):
-        isetp_pattern = r'/\*[0-9a-fA-F]+\*/\s+ISETP\.[A-Z.]+\s+([P]\d+),'
-        predicate_usage_pattern = r'/\*[0-9a-fA-F]+\*/\s+@([P]\d+|![P]\d+)\s+'
-        
-        rearranged_lines = []
-        isetp_instructions = {}
-        i = 0
-        
-        while i < len(lines):
-            line = lines[i]
-            
-            isetp_match = re.search(isetp_pattern, line)
-            if isetp_match:
-                predicate = isetp_match.group(1)
-
-                isetp_instructions[predicate] = (i, line)
-                i += 1
-                continue
-            
-            predicate_match = re.search(predicate_usage_pattern, line)
-            if predicate_match:
-                used_predicate = predicate_match.group(1)
-                if used_predicate.startswith('!'):
-                    used_predicate = used_predicate[1:]
-                
-                if used_predicate in isetp_instructions:
-                    stored_line_index, stored_line = isetp_instructions[used_predicate]
-                    rearranged_lines.append(stored_line)
-                    del isetp_instructions[used_predicate]
-            
-            rearranged_lines.append(line)
-            i += 1
-        
-        return rearranged_lines

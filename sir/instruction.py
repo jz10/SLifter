@@ -29,6 +29,25 @@ class Instruction:
 
         self.Users = set()
         self.ReachingDefs = {}
+
+
+        # Def/use operands layout correction
+        self._UseOpStartIdx = 1
+
+        # IMAD.WIDE has two defs, RN+1:RN
+        if "WIDE" in self.opcodes:
+            RegPair = self._operands[0].Clone()
+            RegPair.SetReg('R' + str(int(RegPair.Reg[1:]) + 1))
+            self._operands.insert(1, RegPair)
+            self._UseOpStartIdx = 2
+
+        # Store and Branch have no def op
+        if self.IsBranch() or self.IsStore():
+            self._UseOpStartIdx = 0
+        # instruction with predicate carry out have two def op
+        elif len(self._operands) > 1 and self._operands[0].IsReg and self._operands[1].IsPredicateReg:
+            self._UseOpStartIdx = 2
+
         
     @property
     def id(self):
@@ -85,10 +104,6 @@ class Instruction:
     
     def IsPhi(self):
         return len(self._opcodes) > 0 and (self._opcodes[0] == "PHI" or self._opcodes[0] == "PHI64")
-    
-    def DefPredicate(self):
-        if len(self.operands)>0 and self.GetDef() and self.GetDef().Reg:
-            return self.IsPredicateReg(self.GetDef().Reg)
         
     def Predicated(self):
         return self._PFlag is not None
@@ -98,13 +113,6 @@ class Instruction:
 
     def InCondPath(self):
         return self.Predicated()
-
-    def IsBinary(self):
-        return len(self._opcodes) > 0 and (self._opcodes[0] in [
-            "FFMA", "FADD", "XMAD", "IMAD", "SHL", "SHR", "SHF", "S2R"
-        ])
-        # return self._opcodes[Idx] == "FFMA" or self._opcodes[Idx] == "FADD" or self._opcodes[Idx] == "XMAD" or self._opcodes[Idx] == "IMAD" or self._opcodes[Idx] == "SHL" or self._opcodes[Idx] == "SHR" or self._opcodes[Idx] == "SHF" or self._opcodes[Idx] == "S2R" or self._opcodes[Idx] == "ISCADD"
-    
     
     def IsNOP(self):
         return len(self._opcodes) > 0 and self._opcodes[0] == "NOP"
@@ -145,12 +153,6 @@ class Instruction:
                     if Operand.TypeDesc == "NOTYPE":
                         print("Warning: Operand type is NOTYPE: ", Operand.Name)
                     Regs[Operand.GetIRRegName(lifter)] = Operand
-        
-    # Get def operand
-    def GetDef(self):
-        if len(self._operands) > 0 and not self.IsStore():
-            return self._operands[0]
-        return None
 
     def GetRegName(self, Reg):
         return Reg.split('@')[0]
@@ -159,16 +161,23 @@ class Instruction:
         RegName = self.GetRegName(Reg)
         NewReg = RegName + "@" + str(Inst.id)
         return NewReg
+    
+    # Get def operand
+    def GetDefs(self):
+        return self._operands[:self._UseOpStartIdx]
+    
+    def GetDef(self):
+        defs = self.GetDefs()
+        
+        if len(defs) > 1:
+            print("Warning: GetDef finds more than one def operand")
+
+        return defs[0] if len(defs) > 0 else None
 
     # Get use operand
     def GetUses(self):
-        Uses = []
-        startIdx = 0 if self.IsStore() or self.IsBranch() else 1
-        if len(self._operands) > 1:
-            for i in range(startIdx, len(self._operands)):
-                Uses.append(self._operands[i])
-        return Uses
-
+        return self._operands[self._UseOpStartIdx:]
+    
     # Get branch flag
     def GetBranchFlag(self):
         Operand = self._operands[0]
@@ -178,14 +187,24 @@ class Instruction:
             return None
     
     def __str__(self):
-        operand_strs = []
-        for operand in self._operands:
-            operand_strs.append(operand.__str__())
+        pred_prefix = f"@{self._PFlag} " if self._PFlag else ""
+        opcodes_str  = '.'.join(self._opcodes)
+        def_strs  = [str(op) for op in self.GetDefs()]
+        use_strs  = [str(op) for op in self.GetUses()]
+        operand_section = ""
 
-        prefix = f"@{self._PFlag} " if self._PFlag else ""
-        content = f"{prefix}{'.'.join(self.opcodes)} {' '.join(operand_strs)}"
+        if def_strs:
+            operand_section += ", ".join(def_strs)
+            if use_strs:
+                operand_section += " = "
 
-        return content
+        if use_strs:
+            operand_section += ", ".join(use_strs)
+
+        if operand_section:
+            return f"{pred_prefix}{opcodes_str} {operand_section}"
+        else:
+            return f"{pred_prefix}{opcodes_str}"
     
     def __repr__(self):
         return self.__str__()
@@ -460,7 +479,7 @@ class Instruction:
             pass
         
         elif opcode == "BRA":
-            targetId = self.GetDef().Name.zfill(4)
+            targetId = self.GetUses()[0].Name.zfill(4)
             for BB, IRBB in BlockMap.items():
                 if BB.addr_content != targetId:
                     continue
@@ -623,7 +642,7 @@ class Instruction:
             if not op1.IsReg:
                 raise UnsupportedInstructionException(f"CAST64 expects a register operand, got: {op1}")
 
-            val64 = IRBuilder.zext(IRRegs[op1.GetIRRegName(lifter)], ir.IntType(64), "cast64")
+            val64 = IRBuilder.sext(IRRegs[op1.GetIRRegName(lifter)], ir.IntType(64), "cast64")
             IRRegs[dest.GetIRRegName(lifter)] = val64
 
         elif opcode == "BITCAST":
