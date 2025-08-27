@@ -238,7 +238,7 @@ class SaSSParserBase:
             return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
 
         # Check if it is a jump flag
-        if Operand_Content.find(PATH_PREFIX) == 0: # operand starts from 'P'
+        if Operand_Content.find(PATH_PREFIX) == 0 or Operand_Content.startswith('!'): # operand starts from 'P' or '!
             IsReg = True
             Reg = Operand_Content
             Name = Operand_Content

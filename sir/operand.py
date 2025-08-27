@@ -131,12 +131,12 @@ class Operand:
         return self._Name and self._Name.startswith(SR_WARP)
 
     @property
-    def IsZeroReg(self):
-        return self._Name == "RZ" or self._Name == "SRZ"
+    def IsRZ(self):
+        return self.Reg == "RZ" or self.Reg == "SRZ"
     
     @property
     def IsPT(self):
-        return self._Name == "PT"
+        return self.Reg == "PT"
     
     @property
     def ArgOffset(self):
@@ -156,6 +156,8 @@ class Operand:
                 return f"[{self._Reg}+{self._MemAddrOffset}]"
             else:
                 return f"[{self._Reg}]"
+        elif (self.IsPredicateReg or self.IsPT) and self._NotReg:
+            return f"!{self._Reg}"
         elif self.IsReg:
             if self._NotReg:
                 s =  f"~{self._Reg}"

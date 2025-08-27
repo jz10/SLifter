@@ -4,6 +4,8 @@ from llvmlite import ir, binding
 class Module :
     def __init__(self, name, parser):
         self.name = name
+        # Propagate ISA string from parser for arch-specific transforms
+        self.isa = getattr(parser, 'isa', None)
 
         # Parse the module
         self.ParseModule(parser)

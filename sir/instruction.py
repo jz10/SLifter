@@ -128,10 +128,10 @@ class Instruction:
         return False
 
     def IsLoad(self):
-        return len(self._opcodes) > 0 and (self._opcodes[0] == "LDG" or self._opcodes[0] == "SULD")
+        return len(self._opcodes) > 0 and (self._opcodes[0] in ["LDG", "LD"])
 
     def IsStore(self):
-        return len(self._opcodes) > 0 and (self._opcodes[0] == "STG" or self._opcodes[0] == "SUST")
+        return len(self._opcodes) > 0 and (self._opcodes[0] in ["STG", "SUST", "ST"])
 
     # Set all operands as skipped
     def SetSkip(self):
@@ -254,7 +254,7 @@ class Instruction:
         opcode = self._opcodes[0]
 
         def _get_val(op, name=""):
-            if op.IsZeroReg:
+            if op.IsRZ:
                 return lifter.ir.Constant(op.GetIRType(lifter), 0)
             if op.IsPT:
                 return lifter.ir.Constant(op.GetIRType(lifter), 1)
@@ -284,7 +284,12 @@ class Instruction:
                 raise UnsupportedInstructionException(f"MOV32I expects immediate, got: {src}")
             val = lifter.ir.Constant(src.GetIRType(lifter), src.ImmediateValue)
             IRRegs[dest.GetIRRegName(lifter)] = val
-        
+
+        elif opcode == "SETZERO":
+            dest = self._operands[0]
+            zero_val = lifter.ir.Constant(dest.GetIRType(lifter), 0)
+            IRRegs[dest.GetIRRegName(lifter)] = zero_val
+
         elif opcode == "IMAD" or opcode == "IMAD64":
             dest, op1, op2, op3 = self._operands[0], self._operands[1], self._operands[2], self._operands[3]
             v1 = _get_val(op1, "imad_lhs")
@@ -440,7 +445,16 @@ class Instruction:
             raise UnsupportedInstructionException
 
         elif opcode == "LD":
-            raise UnsupportedInstructionException
+            dest, ptr = self._operands[0], self._operands[1]
+            addr = _get_val(ptr, "ld_addr")
+            val = IRBuilder.load(addr, "ld")
+            IRRegs[dest.GetIRRegName(lifter)] = val
+                
+        elif opcode == "ST":
+            ptr, val = self._operands[0], self._operands[1]
+            addr = _get_val(ptr, "st_addr")
+            v = _get_val(val, "st_val")
+            IRBuilder.store(v, addr)
         
         elif opcode == "LOP":
             dest, a, b = self._operands[0], self._operands[1], self._operands[2]
@@ -467,9 +481,6 @@ class Instruction:
             raise UnsupportedInstructionException
         
         elif opcode == "BFI":
-            raise UnsupportedInstructionException
-        
-        elif opcode == "ST":
             raise UnsupportedInstructionException
         
         elif opcode == "SSY":
@@ -517,8 +528,15 @@ class Instruction:
         elif opcode == "PBK":
             raise UnsupportedInstructionException
              
-        elif opcode == "LEA":
-            raise UnsupportedInstructionException
+        elif opcode == "LEA" or opcode == "LEA64":
+            dest, op1, op2, op3 = self._operands[0], self._operands[1], self._operands[2], self._operands[3]
+
+            v1 = _get_val(op1, "lea_a")
+            v2 = _get_val(op2, "lea_b")
+            v3 = _get_val(op3, "lea_scale")
+
+            tmp = IRBuilder.shl(v1, v3, "lea_tmp")
+            IRRegs[dest.GetIRRegName(lifter)] = IRBuilder.add(tmp, v2, "lea")
                     
         elif opcode == "F2I":
             dest, op1 = self._operands[0], self._operands[1]
@@ -587,7 +605,7 @@ class Instruction:
                     IRVal = IRBuilder.call(lifter.GetLaneId, [], "cs2r_lane")
                 elif ValOp.IsWarpId:
                     IRVal = IRBuilder.call(lifter.GetWarpId, [], "cs2r_warp")
-                elif ValOp.IsZeroReg:
+                elif ValOp.IsRZ:
                     IRVal = ir.Constant(ir.IntType(32), 0)
                 else:
                     print(f"CS2R: Unknown special register {ValOp}")

@@ -2,53 +2,67 @@ from transform.transform import SaSSTransform
 from sir.operand import Operand
 from sir.instruction import Instruction
 
+
+def _sr_map_for_isa(isa: str | None):
+    # Default mapping (sm_35/sm_52): NTID.X at 0x08
+    base = {
+        'SR_NTID.X': 0x08,
+        'SR_NTID.Y': 0x0C,
+        'SR_NTID.Z': 0x10,
+        'SR_GRID_DIM.X': 0x14,
+        'SR_GRID_DIM.Y': 0x18,
+        'SR_GRID_DIM.Z': 0x1C,
+        'SR_CTAID.X': 0x20,
+        'SR_CTAID.Y': 0x24,
+        'SR_CTAID.Z': 0x28,
+        'SR_TID.X': 0x2C,
+        'SR_TID.Y': 0x30,
+        'SR_TID.Z': 0x34,
+        'SR_LANEID': 0x38,
+    }
+    if isa == 'sm_75':
+        # On Turing/Ampere SASS dumps used here, NTID.X is observed at 0x0
+        base = dict(base)
+        base['SR_NTID.X'] = 0x0
+    return base
+
+
 class SRSubstitute(SaSSTransform):
     def apply(self, module):
         print("=== Start of SRSubstitute ===")
         count = 0
+        sr_to_offset = _sr_map_for_isa(getattr(module, 'isa', None))
 
         for func in module.functions:
             for block in func.blocks:
-                count += process(block.instructions)
+                count += process(block.instructions, sr_to_offset)
 
         print(f"SRSubstitute: processed {count} operands")
         print("=== End of SRSubstitute ===")
 
-SR_TO_OFFSET = {
-    'SR_NTID.X': 0x08,      # blockDim.x
-    'SR_NTID.Y': 0x0C,      # blockDim.y  
-    'SR_NTID.Z': 0x10,      # blockDim.z
-    'SR_GRID_DIM.X': 0x14,  # gridDim.x
-    'SR_GRID_DIM.Y': 0x18,  # gridDim.y
-    'SR_GRID_DIM.Z': 0x1C,  # gridDim.z
-    'SR_CTAID.X': 0x20,     # blockIdx.x (fake)
-    'SR_CTAID.Y': 0x24,     # blockIdx.y (fake)
-    'SR_CTAID.Z': 0x28,     # blockIdx.z (fake)
-    'SR_TID.X': 0x2C,       # threadIdx.x (fake)
-    'SR_TID.Y': 0x30,       # threadIdx.y (fake)
-    'SR_TID.Z': 0x34,       # threadIdx.z (fake)
-    'SR_LANEID': 0x38       # lane id (warp lane index)
-}
 
-def process(instructions):
+def process(instructions, sr_to_offset):
     count = 0
-    
+
     # Replace special register operands with memory addresses
     for inst in instructions:
         if inst.opcodes and inst.opcodes[0] == 'S2R':
-            offset = SR_TO_OFFSET[inst.operands[1].Name]
+            offset = sr_to_offset[inst.operands[1].Name]
 
-            inst.opcodes[0] = 'MOV'            
+            inst.opcodes[0] = 'MOV'
             new_operand = Operand(
-                f"c[0x0][{hex(offset)}]", 
-                None, 
-                None, 
-                offset, 
-                False, 
-                True, 
-                False
+                f"c[0x0][{hex(offset)}]",
+                None,
+                None,
+                offset,
+                False,
+                True,
+                False,
             )
             inst._operands[1] = new_operand
             count += 1
-    
+
     return count
+
+# Keep a default export for other modules that import it
+SR_TO_OFFSET = _sr_map_for_isa(None)

@@ -16,7 +16,7 @@ class FPHack(SaSSTransform):
     # Fast integer division
     # I2F.F32.U32.RP R4, R0 ;
     # MUFU.RCP R4, R4 ;
-    # IADD32I R5, R4, 0xffffffe ; 
+    # IADD32I R5, R4, 0xffffffe ;  or IADD3 R5, R4, 0xffffffe, RZ
     # F2I.FTZ.U32.F32.TRUNC R5, R5 ; 
     # This hack produces a magic number for fast integer division
     
@@ -38,7 +38,7 @@ class FPHack(SaSSTransform):
             return 0
         
         for useInst, useOp in inst2.Users:
-            if useInst.opcodes[0] == "IADD32I":
+            if useInst.opcodes[0] == "IADD32I" or useInst.opcodes[0] == "IADD3":
                 inst3 = useInst
                 iaddUseOp = useOp
 

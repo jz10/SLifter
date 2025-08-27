@@ -9,6 +9,7 @@ class SaSSParser:
     def __init__(self, file):
         # Retrieve ISA
         isa = self.get_isa(file)
+        self.isa = isa
         # print("parse ", isa)
 
         self.file = file

@@ -7,6 +7,8 @@ class Pack64(SaSSTransform):
     def apply(self, module):
         print("=== Start of Pack64 Transformation ===")
 
+
+        handledRegs = set()
         count = 0
         for func in module.functions:
             for block in func.blocks:
@@ -19,7 +21,13 @@ class Pack64(SaSSTransform):
                         else:
                             ptr_idx = 0
 
-                        src_op_lower = Operand(inst.operands[ptr_idx].Name, 
+                        reg = inst.operands[ptr_idx].Reg
+
+                        if reg in handledRegs:
+                            continue
+                        handledRegs.add(reg)
+
+                        src_op_lower = Operand(inst.operands[ptr_idx].Reg, 
                                                inst.operands[ptr_idx].Reg,
                                                inst.operands[ptr_idx]._Suffix,
                                                inst.operands[ptr_idx]._ArgOffset,

@@ -131,7 +131,7 @@ class BasicBlock:
                 # Incoming operands correspond to predecessors in order
                 for i, op in enumerate(inst._operands[1:]):
                     pred_bb = self._preds[i]
-                    if op.IsZeroReg:
+                    if op.IsRZ:
                         val = lifter.ir.Constant(op.GetIRType(lifter), 0)
                     elif op.IsPT:
                         val = lifter.ir.Constant(op.GetIRType(lifter), 1)
