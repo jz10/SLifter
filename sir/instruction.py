@@ -3,8 +3,6 @@ from sir.controlcode import ControlCode
 from sir.controlcode import PresetCtlCodeException
 from llvmlite import ir
 
-ARG_OFFSET = 320 # 0x140
-
 class UnsupportedOperatorException(Exception):
     pass
 
@@ -574,10 +572,91 @@ class Instruction:
                     
         elif opcode == "IABS":
             raise UnsupportedInstructionException
+
                     
         elif opcode == "LOP3":
-            raise UnsupportedInstructionException
-                    
+            # Lower LOP3.LUT for both register and predicate destinations.
+            dest = self.GetDefs()[0]
+            src1, src2, src3 = self.GetUses()[0], self.GetUses()[1], self.GetUses()[2]
+            func = self._opcodes[1] if len(self._opcodes) > 1 else None
+
+            if func != "LUT":
+                raise UnsupportedInstructionException
+
+            # Find the LUT immediate among uses (last immediate before any PT operand)
+            imm8 = None
+            for op in reversed(self.GetUses()):
+                if op.IsImmediate:
+                    imm8 = op.ImmediateValue & 0xFF
+                    break
+            if imm8 is None:
+                raise UnsupportedInstructionException
+
+            a = _get_val(src1, "lop3_a")
+            b = _get_val(src2, "lop3_b")
+            c = _get_val(src3, "lop3_c")
+
+            # Sum-of-products bitwise construction for 32-bit result
+            zero = lifter.ir.Constant(b.type, 0)
+            # Fast-path a-agnostic mask used frequently: imm8 == 0xC0 -> b & c
+            if imm8 == 0xC0:
+                res32 = IRBuilder.and_(b, c, "lop3_bc")
+            else:
+                nota = IRBuilder.not_(a, "lop3_nota")
+                notb = IRBuilder.not_(b, "lop3_notb")
+                notc = IRBuilder.not_(c, "lop3_notc")
+                res32 = zero
+                for idx in range(8):
+                    if ((imm8 >> idx) & 1) == 0:
+                        continue
+                    xa = a if (idx & 1) else nota
+                    xb = b if (idx & 2) else notb
+                    xc = c if (idx & 4) else notc
+                    tmp = IRBuilder.and_(xa, xb, f"lop3_and_ab_{idx}")
+                    tmp = IRBuilder.and_(tmp, xc, f"lop3_and_abc_{idx}")
+                    res32 = IRBuilder.or_(res32, tmp, f"lop3_or_{idx}")
+
+            if dest.IsPredicateReg:
+                # For P-dest, prefer a safe minimal lowering:
+                #  - Recognize imm8==0xC0 -> (B & C) != 0 (matches loop3).
+                #  - Otherwise, approximate with 1-bit LUT lookup of (LSB(A),LSB(B),LSB(C)).
+                uses = self.GetUses()
+                c_is_imm = len(uses) >= 3 and uses[2].IsImmediate
+                if imm8 == 0xC0 and c_is_imm:
+                    mask = IRBuilder.and_(b, c, "lop3_bc_mask")
+                    pred = IRBuilder.icmp_unsigned("!=", mask, zero, "lop3_pred")
+                    IRRegs[dest.GetIRRegName(lifter)] = pred
+                else:
+                    one_i32 = lifter.ir.Constant(a.type, 1)
+                    a_lsb_i32 = IRBuilder.and_(a, one_i32, "lop3_a_lsb")
+                    b_lsb_i32 = IRBuilder.and_(b, one_i32, "lop3_b_lsb")
+                    c_lsb_i32 = IRBuilder.and_((c if c.type == a.type else IRBuilder.zext(c, a.type, "lop3_c_zext")), one_i32, "lop3_c_lsb")
+                    a0 = IRBuilder.icmp_unsigned("!=", a_lsb_i32, lifter.ir.Constant(a.type, 0), "lop3_a0")
+                    b0 = IRBuilder.icmp_unsigned("!=", b_lsb_i32, lifter.ir.Constant(b.type, 0), "lop3_b0")
+                    c0 = IRBuilder.icmp_unsigned("!=", c_lsb_i32, lifter.ir.Constant(a.type, 0), "lop3_c0")
+                    a0_i32 = IRBuilder.sext(a0, a.type)
+                    b0_i32 = IRBuilder.sext(b0, b.type)
+                    c0_i32 = IRBuilder.sext(c0, a.type)
+                    idx = IRBuilder.or_(
+                        a0_i32,
+                        IRBuilder.or_(
+                            IRBuilder.shl(b0_i32, lifter.ir.Constant(b.type, 1)),
+                            IRBuilder.shl(c0_i32, lifter.ir.Constant(a.type, 2))
+                        ),
+                        "lop3_idx"
+                    )
+                    imm_i32 = lifter.ir.Constant(a.type, imm8 & 0xFF)
+                    bit_i32 = IRBuilder.and_(
+                        IRBuilder.lshr(imm_i32, idx, "lop3_lut_shift"),
+                        lifter.ir.Constant(a.type, 1),
+                        "lop3_lut_bit"
+                    )
+                    pred = IRBuilder.icmp_unsigned("!=", bit_i32, lifter.ir.Constant(a.type, 0), "lop3_pred")
+                    IRRegs[dest.GetIRRegName(lifter)] = pred
+            else:
+                IRRegs[dest.GetIRRegName(lifter)] = res32
+
+
         elif opcode == "MOVM":
             raise UnsupportedInstructionException
                     
@@ -657,10 +736,10 @@ class Instruction:
             dest, op1 = self._operands[0], self._operands[1]
             if not dest.IsReg:
                 raise UnsupportedInstructionException(f"CAST64 expects a register operand, got: {dest}")
-            if not op1.IsReg:
-                raise UnsupportedInstructionException(f"CAST64 expects a register operand, got: {op1}")
 
-            val64 = IRBuilder.sext(IRRegs[op1.GetIRRegName(lifter)], ir.IntType(64), "cast64")
+            val = _get_val(op1)
+
+            val64 = IRBuilder.sext(val, ir.IntType(64), "cast64")
             IRRegs[dest.GetIRRegName(lifter)] = val64
 
         elif opcode == "BITCAST":

@@ -21,9 +21,13 @@ def _sr_map_for_isa(isa: str | None):
         'SR_LANEID': 0x38,
     }
     if isa == 'sm_75':
-        # On Turing/Ampere SASS dumps used here, NTID.X is observed at 0x0
         base = dict(base)
         base['SR_NTID.X'] = 0x0
+        base['SR_NTID.Y'] = 0x4
+        base['SR_NTID.Z'] = 0x8
+        base['SR_GRID_DIM.X'] = 0xC
+        base['SR_GRID_DIM.Y'] = 0x10
+        base['SR_GRID_DIM.Z'] = 0x14
     return base
 
 

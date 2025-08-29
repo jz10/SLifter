@@ -1,9 +1,5 @@
 from lift.lifter import Lifter
 
-REG_PREFIX = 'R'
-ARG_PREFIX = 'c[0x0]'
-ARG_OFFSET = 320 # 0x140
-
 # Special register constants
 SR_TID = 'SR_TID'
 SR_NTID = 'SR_NTID'  
@@ -63,6 +59,10 @@ class Operand:
     def IsReg(self):
         return self._IsReg
     
+    @property
+    def IsConstMem(self):
+        return self._ArgOffset is not None
+
     @property
     def IsPredicateReg(self):
         if not self.IsReg:
@@ -136,7 +136,7 @@ class Operand:
     
     @property
     def IsPT(self):
-        return self.Reg == "PT"
+        return self.Reg == "PT" or self.Reg == "!PT"
     
     @property
     def ArgOffset(self):
@@ -189,6 +189,24 @@ class Operand:
             raise InvalidOperandException("Cannot set register for non-register operand")
         self._Reg = RegName
         self._Name = RegName
+
+    def Replace(self, other):
+        self._Name = other._Name
+        self._Reg = other._Reg
+        self._Suffix = other._Suffix
+        self._ArgOffset = other._ArgOffset
+        self._IsReg = other._IsReg
+        self._IsArg = other._IsArg
+        self._IsMemAddr = other._IsMemAddr
+        self._IsImmediate = other._IsImmediate
+        self._ImmediateValue = other._ImmediateValue
+        self._NegativeReg = other._NegativeReg
+        self._NotReg = other._NotReg
+        self._AbsReg = other._AbsReg
+        self._Skipped = other._Skipped
+        self._TypeDesc = other._TypeDesc
+        self._IRType = other._IRType
+        self._IRRegName = other._IRRegName
 
     # Set the type description for operand
     def SetTypeDesc(self, Ty):

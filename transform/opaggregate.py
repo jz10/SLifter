@@ -106,7 +106,7 @@ class OperAggregate(SaSSTransform):
                 RemoveInsts.add(Inst2)
 
                 for i in range(len(Inst1.GetUses())):
-                    if Inst1.GetUses()[i].IsReg:
+                    if Inst1.GetUses()[i].IsReg and not Inst1.GetUses()[i].IsRZ:
                         NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[i]], Inst2.ReachingDefs[Inst2.GetUses()[i]]))
 
             elif Inst1.opcodes[0] == "IADD32I" and Inst2.opcodes[0] == "IADD":
@@ -208,6 +208,37 @@ class OperAggregate(SaSSTransform):
                 # This pattern always start from a 32-bit register
                 Cast64Inserts.setdefault(Inst3, []).append(0)
 
+            elif Inst1.opcodes[0] == "IMAD" and Inst2.opcodes[0] == "SHF":
+                # Sign extension to 64 and shift left
+                # (SHF.R.S32.HI R35 = RZ, 0x1f, R4
+                # IMAD.SHL.U32 R36 = R4, 0x4, RZ
+                # SHF.L.U64.HI R37 = R4, 0x2, R35)
+                # => SHL64 R36 = R4, 0x2
+                # Note: SHL is a hint to use bit shift to perform x4
+                # It does not mean shift left by 4 bit
+                Inst3 = Inst2.ReachingDefs[Inst2.GetUses()[2]]  # SHF.R.S32.HI instruction
+
+                dest_op = Inst1.GetDef().Clone()
+                src_op = Inst1.GetUses()[0].Clone()
+                src_op2 = Inst2.GetUses()[1].Clone()
+                inst = Instruction(
+                    id=f"{Inst1.id}_shl64",
+                    opcodes=["SHL64"],
+                    operands=[dest_op, src_op, src_op2],
+                    inst_content=f"SHL64 {dest_op.Name}, {src_op.Name}, {src_op2.Name}",
+                    parentBB=Inst1.parent
+                )
+
+                InsertInsts[Inst1] = inst
+
+                RemoveInsts.add(Inst1)
+                RemoveInsts.add(Inst2)
+                RemoveInsts.add(Inst3)
+
+                # Special case: Instruction pairs should end at this point
+                # This pattern always start from a 32-bit register
+                Cast64Inserts.setdefault(Inst1, []).append(0)
+
             elif Inst1.opcodes[0] == "ISCADD" and Inst2.opcodes[0] == "IADD":
                 # (SHR R3 R2.reuse 0x1e, ISCADD R2.CC R2 c[0x0][0x150] 0x2, IADD.X R3 R3 c[0x0][0x154]) => (IMAD64 R2, 0x4, c[0x0][0x150])
                 # Three instructions involved
@@ -260,7 +291,7 @@ class OperAggregate(SaSSTransform):
                 # Special case: Instruction pairs should end at this point
                 # This pattern always start from two 32-bit register
                 for i in range(len(Inst1.GetUses())):
-                    if Inst1.GetUses()[i].IsReg:
+                    if Inst1.GetUses()[i].IsReg and not Inst1.GetUses()[i].IsRZ:
                         Cast64Inserts.setdefault(Inst1, []).append(i)
 
             elif Inst1.opcodes[0] == "IADD3" and Inst2.opcodes[0] == "IMAD": 
@@ -282,9 +313,9 @@ class OperAggregate(SaSSTransform):
                     RemoveInsts.add(Inst1)
                     RemoveInsts.add(Inst2)
 
-                if (Inst1.GetUses()[0].IsReg and Inst2.GetUses()[0].IsReg):
+                if (Inst1.GetUses()[0].IsReg and not Inst1.GetUses()[0].IsRZ and Inst2.GetUses()[0].IsReg and not Inst2.GetUses()[0].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]]))
-                if (Inst1.GetUses()[1].IsReg and Inst2.GetUses()[2].IsReg):
+                if (Inst1.GetUses()[1].IsReg and not Inst1.GetUses()[1].IsRZ and Inst2.GetUses()[2].IsReg and not Inst2.GetUses()[2].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[1]], Inst2.ReachingDefs[Inst2.GetUses()[2]]))
 
             elif Inst1.opcodes[0] == "LEA" and Inst2.opcodes[0] == "LEA":
@@ -307,9 +338,9 @@ class OperAggregate(SaSSTransform):
                 RemoveInsts.add(Inst1)
                 RemoveInsts.add(Inst2)
 
-                if (Inst1.GetUses()[0].IsReg and Inst2.GetUses()[2].IsReg):
+                if (Inst1.GetUses()[0].IsReg and not Inst1.GetUses()[0].IsRZ and Inst2.GetUses()[2].IsReg and not Inst2.GetUses()[2].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[2]]))
-                if (Inst1.GetUses()[1].IsReg and Inst2.GetUses()[1].IsReg):
+                if (Inst1.GetUses()[1].IsReg and not Inst1.GetUses()[1].IsRZ and Inst2.GetUses()[1].IsReg and not Inst2.GetUses()[1].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[1]], Inst2.ReachingDefs[Inst2.GetUses()[1]]))
 
             elif Inst1.opcodes[0] == "IADD3" and Inst2.opcodes[0] == "IADD3":
@@ -333,11 +364,11 @@ class OperAggregate(SaSSTransform):
                 RemoveInsts.add(Inst1)
                 RemoveInsts.add(Inst2)
 
-                if (Inst1.GetUses()[0].IsReg and Inst2.GetUses()[0].IsReg):
+                if (Inst1.GetUses()[0].IsReg and not Inst1.GetUses()[0].IsRZ and Inst2.GetUses()[0].IsReg and not Inst2.GetUses()[0].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]]))
-                if (Inst1.GetUses()[1].IsReg and Inst2.GetUses()[1].IsReg):
+                if (Inst1.GetUses()[1].IsReg and not Inst1.GetUses()[1].IsRZ and Inst2.GetUses()[1].IsReg and not Inst2.GetUses()[1].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[1]], Inst2.ReachingDefs[Inst2.GetUses()[1]]))
-                if (Inst1.GetUses()[2].IsReg and Inst2.GetUses()[2].IsReg):
+                if (Inst1.GetUses()[2].IsReg and not Inst1.GetUses()[2].IsRZ and Inst2.GetUses()[2].IsReg and not Inst2.GetUses()[2].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[2]], Inst2.ReachingDefs[Inst2.GetUses()[2]]))
 
             elif Inst1.opcodes[0] == "IADD3" and Inst2.opcodes[0] == "LEA":
@@ -361,9 +392,9 @@ class OperAggregate(SaSSTransform):
                 RemoveInsts.add(Inst1)
                 RemoveInsts.add(Inst2)
 
-                if (Inst1.GetUses()[0].IsReg and Inst2.GetUses()[0].IsReg):
+                if (Inst1.GetUses()[0].IsReg and not Inst1.GetUses()[0].IsRZ and Inst2.GetUses()[0].IsReg and not Inst2.GetUses()[0].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[0]], Inst2.ReachingDefs[Inst2.GetUses()[0]]))
-                if (Inst1.GetUses()[1].IsReg and Inst2.GetUses()[1].IsReg):
+                if (Inst1.GetUses()[1].IsReg and not Inst1.GetUses()[1].IsRZ and Inst2.GetUses()[1].IsReg and not Inst2.GetUses()[1].IsRZ):
                     NextInstPairs.append((Inst1.ReachingDefs[Inst1.GetUses()[1]], Inst2.ReachingDefs[Inst2.GetUses()[1]]))
 
             elif Inst2.opcodes[0] == "SHF" and any(Inst2 == user for user, _ in Inst1.Users):
@@ -431,8 +462,7 @@ class OperAggregate(SaSSTransform):
 
                     for use_index in use_indices:
                         src_op_name = inst.GetUses()[use_index].Name
-                        src_op = Operand(src_op_name, src_op_name, None, -1, True, False, False)
-
+                        src_op = inst.GetUses()[use_index].Clone()
 
                         # Skip if the current reg will be a 64 value
                         if src_op_name in vals64:
@@ -453,8 +483,8 @@ class OperAggregate(SaSSTransform):
 
                         # Update the instruction to use the new register
                         for UseOp in InsertInsts[inst].GetUses():
-                            if UseOp.Reg == src_op_name:
-                                UseOp.SetReg(dest_op_name)
+                            if UseOp.Name == src_op_name:
+                                UseOp.Replace(dest_op)
 
                 if inst in InsertInsts:
                     insertInst = InsertInsts[inst]

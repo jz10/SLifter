@@ -52,7 +52,7 @@ class Lifter :
         # self.GetWarpId = self.ir.Function(llvm_module, FuncTy, FuncName)
 
         # Constant memory
-        ArrayTy =  self.ir.ArrayType(self.ir.IntType(32), 1024)
+        ArrayTy =  self.ir.ArrayType(self.ir.IntType(8), 4096)
         self.ConstMem = self.ir.GlobalVariable(llvm_module, ArrayTy, "const_mem")
         
     def LiftModule(self, module, file):

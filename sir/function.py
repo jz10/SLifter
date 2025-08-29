@@ -4,8 +4,6 @@ from lift.lifter import Lifter
 from llvmlite import ir
 from transform.sr_substitute import SR_TO_OFFSET
 
-ARG_OFFSET = 320 # 0x140
-
 class Function:
     
     #def __init__(self, parser):
@@ -109,15 +107,14 @@ class Function:
         OFFSET_TO_SR = {v: k for k, v in SR_TO_OFFSET.items()}
 
         for entry in Args:
-            addr = Builder.gep(lifter.ConstMem, [ir.Constant(ir.IntType(32), 0), 
-                                                 ir.Constant(ir.IntType(32), entry.ArgOffset)])
+            addr = Builder.gep(lifter.ConstMem, [ir.Constant(ir.IntType(64), 0), 
+                                                 ir.Constant(ir.IntType(64), entry.ArgOffset)])
             if entry.ArgOffset in OFFSET_TO_SR:
                 name = OFFSET_TO_SR[entry.ArgOffset]
             else:
                 name = f"c[0x0][{hex(entry.ArgOffset)}]"
 
-            if entry.TypeDesc != "Int32" and entry.TypeDesc != "NOTYPE":
-                addr = Builder.bitcast(addr, lifter.ir.PointerType(lifter.GetIRType(entry.TypeDesc)))
+            addr = Builder.bitcast(addr, lifter.ir.PointerType(lifter.GetIRType(entry.TypeDesc)))
             val = Builder.load(addr, name)
             ConstMem[entry.ArgOffset] = val
 

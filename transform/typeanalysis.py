@@ -25,10 +25,9 @@ class TypeAnalysis(SaSSTransform):
             "XOR": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
             "NOT": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
             "LEA": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "LOP": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
             "SHL": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
             "SHR": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
-            "LOP3": ["PROP", "PROP", "PROP", "PROP", "NA", "NA"],
+            "LOP3": ["PROP", "PROP", "PROP", "PROP", "PROP", "PROP"],
             "LDG": ["PROP", "PROP_PTR", "NA", "NA", "NA", "NA"],
             "LD": ["PROP", "PROP_PTR", "NA", "NA", "NA", "NA"],
             "SULD": ["PROP", "PROP_PTR", "NA", "NA", "NA", "NA"],
@@ -175,16 +174,34 @@ class TypeAnalysis(SaSSTransform):
         OpTypes.update(CurrentState)          
 
         return Changed
-    
+
+    def SetOptype(self, OpTypes, Operand, TypeDesc):
+        if Operand.IsReg:
+            OpTypes[Operand.Reg] = TypeDesc
+        else:
+            # Store operand itself as key for non-register values
+            # E.g. 0 in IADD vs 0 in FADD have different types
+            OpTypes[Operand] = TypeDesc
+
+    def GetOptype(self, OpTypes, Operand):
+        if Operand in OpTypes:
+            return OpTypes[Operand]
+        elif Operand.Reg in OpTypes:
+            return OpTypes[Operand.Reg]
+        else:
+            return "NOTYPE"
+        
     def ResolveType(self, Inst, i):
         op = Inst._opcodes[0]
 
         # Special case for the predicate register in instructions with multiple defs
         # E.g. LEA R12, P0 = R6.reuse, R4, 0x2, because of P0, decrease index by 1 to get correct entry in table
-        if len(Inst.GetDefs()) > 1 and i > 1:
-            typeDesc = self.instructionTypeTable[op][i-1]
-        else:
-            typeDesc = self.instructionTypeTable[op][i]
+        typeDesc = "NA"
+        if i < len(self.instructionTypeTable[op]):
+            if len(Inst.GetDefs()) > 1 and i > 1:
+                typeDesc = self.instructionTypeTable[op][i-1]
+            else:
+                typeDesc = self.instructionTypeTable[op][i]
 
         # # Flag overrides
         # for j, flag in enumerate(Inst.opcodes[1:], start=1):
@@ -216,12 +233,7 @@ class TypeAnalysis(SaSSTransform):
                 if operand.Reg in OpTypes and OpTypes[operand.Reg] != typeDesc:
                     print(f"Warning: Type mismatch for {operand.Reg} in {Inst}: {OpTypes[operand.Reg]} vs {typeDesc}")
 
-                if operand.IsReg:
-                    OpTypes[operand.Reg] = typeDesc
-                else:
-                    # Store operand itself as key for non-register values
-                    # E.g. 0 in IADD vs 0 in FADD have different types
-                    OpTypes[operand] = typeDesc 
+                self.SetOptype(OpTypes, operand, typeDesc)
 
         # Find propagate type
         for i, operand in enumerate(Inst.operands):
@@ -229,10 +241,10 @@ class TypeAnalysis(SaSSTransform):
 
             if typeDesc == "PROP":
                 if operand.Name in OpTypes:
-                    if propType != "NOTYPE" and OpTypes[operand.Name] != propType:
-                        print(f"Warning: Propagation type mismatch for {operand.Name} in {Inst}: {OpTypes[operand.Name]} vs {propType}")
-                        
-                    propType = OpTypes[operand.Name]
+                    if propType != "NOTYPE" and self.GetOptype(OpTypes, operand) != propType:
+                        print(f"Warning: Propagation type mismatch for {operand.Name} in {Inst}: {self.GetOptype(OpTypes, operand)} vs {propType}")
+
+                    propType = self.GetOptype(OpTypes, operand)
 
         # Propagate types
         if propType != "NOTYPE":
@@ -240,6 +252,6 @@ class TypeAnalysis(SaSSTransform):
                 typeDesc = self.ResolveType(Inst, i)
 
                 if typeDesc == "PROP":
-                    OpTypes[operand.Name] = propType
+                    self.SetOptype(OpTypes, operand, propType)
                 elif typeDesc == "PROP_PTR":
-                    OpTypes[operand.Name] = propType + "_PTR"
+                    self.SetOptype(OpTypes, operand, propType + "_PTR")

@@ -8,13 +8,12 @@ class Pack64(SaSSTransform):
         print("=== Start of Pack64 Transformation ===")
 
 
-        handledRegs = set()
         count = 0
         for func in module.functions:
             for block in func.blocks:
                 new_insts = []
                 for inst in block.instructions:
-                    if (inst.IsLoad() or inst.IsStore()) and 'E' in inst.opcodes:
+                    if (inst.IsLoad() or inst.IsStore()):
                         
                         if inst.IsLoad():
                             ptr_idx = 1
@@ -23,22 +22,18 @@ class Pack64(SaSSTransform):
 
                         reg = inst.operands[ptr_idx].Reg
 
-                        if reg in handledRegs:
-                            continue
-                        handledRegs.add(reg)
-
                         src_op_lower = Operand(inst.operands[ptr_idx].Reg, 
-                                               inst.operands[ptr_idx].Reg,
-                                               inst.operands[ptr_idx]._Suffix,
-                                               inst.operands[ptr_idx]._ArgOffset,
-                                               True, False, False)
+                                            inst.operands[ptr_idx].Reg,
+                                            inst.operands[ptr_idx]._Suffix,
+                                            inst.operands[ptr_idx]._ArgOffset,
+                                            True, False, False)
                         
                         src_op_upper_name = 'R' + str(int(inst.operands[ptr_idx].Reg[1:]) + 1)
                         src_op_upper = Operand(src_op_upper_name,
-                                               src_op_upper_name,
-                                               src_op_lower._Suffix,
-                                               src_op_lower._ArgOffset,
-                                               True, False, False) 
+                                            src_op_upper_name,
+                                            src_op_lower._Suffix,
+                                            src_op_lower._ArgOffset,
+                                            True, False, False) 
 
                         new_reg = src_op_lower.Name + "_int64"
                         dst_op = Operand(new_reg, new_reg, None, -1, True, False, False)

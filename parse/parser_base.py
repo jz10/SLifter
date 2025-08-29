@@ -13,8 +13,8 @@ class UnmatchedControlCode(Exception):
     pass
 
 REG_PREFIX = 'R'
+UREG_PREFIX = 'UR' 
 ARG_PREFIX = 'c[0x0]'
-ARG_OFFSET = 320 # 0x140
 
 # Special register constants  
 SR_TID = 'SR_TID'
@@ -103,8 +103,7 @@ class SaSSParserBase:
             if ("Function : " in line):
                 # Wrap up previous function by creating control-flow graph
                 if PrevFunc != None:
-                    CurrFunc.blocks = self.CreateCFG(Insts)
-                    
+                    PrevFunc.blocks = self.CreateCFG(Insts)
                 # Check the function name
                 items = line.split(' : ')
 

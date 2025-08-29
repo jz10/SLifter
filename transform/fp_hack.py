@@ -58,6 +58,9 @@ class FPHack(SaSSTransform):
         dest_op.SetReg(src_op.Name + "_cast")
         iaddUseOp.SetReg(src_op.Name + "_cast")
 
+        for useInst, useOp in inst2.Users:
+            useOp.SetReg(src_op.Name + "_cast")
+
         bitcastInstBefore = Instruction(
             id=f"{inst2.id}_bitcast_before",
             opcodes=["BITCAST"],

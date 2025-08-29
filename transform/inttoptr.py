@@ -7,6 +7,7 @@ class IntToPtr(SaSSTransform):
     def apply(self, module):
         print("=== Start of IntToPtr Transformation ===")
         count = 0
+        new_regs_count = {}
         for func in module.functions:
             for block in func.blocks:
                 new_insts = []
@@ -20,6 +21,8 @@ class IntToPtr(SaSSTransform):
                         src_op = inst.operands[ptr_idx]
 
                         new_reg = src_op.Reg + "_to_ptr"
+                        new_regs_count[new_reg] = new_regs_count.get(new_reg, 0) + 1
+                        new_reg = f"{new_reg}_{new_regs_count[new_reg]}"
                         dst_op = Operand(new_reg, new_reg, None, -1, True, False, True)
 
                         inst_content = f"INTTOPTR {dst_op.Name}, {src_op.Name}"
