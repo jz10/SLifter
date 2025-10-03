@@ -15,11 +15,27 @@ class DCE(SaSSTransform):
 
     def process(self, func):
         side_effect_instructions = set([
-            "STG", "ST", 
-            "LDG", "LD", 
-            "CALL", "RET", "EXIT",
-            "ISETP",
-            "BRA", "PBRA"])
+            "STG",    
+            "ST",     
+            "STS",    
+            "SUST",   
+            "ATOM",   
+            "RED",
+            "BAR", 
+            "CALL",   
+            "RET",    
+            "EXIT",   
+            "BRA",    
+            "PBRA",   
+            "VOTE",   
+            "SHFL",   
+            "LDG",    
+            "LD",     
+            "LDS",    
+            "SULD",
+            "MATCH",
+            "RED",
+        ])
 
         live = []
         queue = deque()

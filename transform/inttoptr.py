@@ -12,18 +12,15 @@ class IntToPtr(SaSSTransform):
             for block in func.blocks:
                 new_insts = []
                 for inst in block.instructions:
-                    if inst.IsLoad() or inst.IsStore():
-                        if inst.IsLoad():
-                            ptr_idx = 1
-                        else:
-                            ptr_idx = 0
+                    if inst.IsGlobalLoad() or inst.IsGlobalStore():
+                        ptr_idx = inst.useOpStartIdx
 
                         src_op = inst.operands[ptr_idx]
 
                         new_reg = src_op.Reg + "_to_ptr"
                         new_regs_count[new_reg] = new_regs_count.get(new_reg, 0) + 1
                         new_reg = f"{new_reg}_{new_regs_count[new_reg]}"
-                        dst_op = Operand(new_reg, new_reg, None, -1, True, False, True)
+                        dst_op = Operand(new_reg, new_reg, None, None, True, False, True)
 
                         inst_content = f"INTTOPTR {dst_op.Name}, {src_op.Name}"
                         cast_inst = Instruction(

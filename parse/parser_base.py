@@ -12,23 +12,6 @@ class NoParsingEffort(Exception):
 class UnmatchedControlCode(Exception):
     pass
 
-REG_PREFIX = 'R'
-UREG_PREFIX = 'UR' 
-ARG_PREFIX = 'c[0x0]'
-
-# Special register constants  
-SR_TID = 'SR_TID'
-SR_NTID = 'SR_NTID'
-SR_CTAID = 'SR_CTAID'
-SR_LANE = 'SR_LANE'
-SR_WARP = 'SR_WARP'
-SR_ZERO = 'SRZ'
-
-PTRREG_PREFIX = '[R'
-PATH_PREFIX = 'P'
-PTR_PREFIX = '['
-PTR_SUFFIX = ']'
-
 class SaSSParserBase:
     def __init__(self, isa, file):
         self.file = file
@@ -123,18 +106,6 @@ class SaSSParserBase:
         items = line.split('/*')
         return items[1]
     
-    def ExtractPredicateReg(self, opcode):
-        if opcode[0] == '@' and opcode[1] == 'P' and opcode[2].isdigit():
-            return opcode[1:3]
-        
-        return None
-    
-    def ExtractPredicateRegNeg(self, opcode):
-        if opcode[0] == '@' and opcode[1] == '!' and opcode[2] == 'P' and opcode[3].isdigit():
-            return opcode[1:4]
-            
-        return None
-    
     # Retrieve instruction's opcode
     def GetInstOpcode(self, line):
         items = line.split(';')
@@ -143,25 +114,24 @@ class SaSSParserBase:
         # Get opcode
         opcode = items[0]
         PFlag = None
-        # Handle the condntion branch flags
-        # if opcode == "@P0":
-        #     PFlag = "P0"
-        #     opcode = items[1]
-        # elif opcode == "@!P0":
-        #     PFlag = "!P0"
-        #     opcode = items[1]
-        pred_reg = self.ExtractPredicateReg(opcode)
-        pred_reg_neg = self.ExtractPredicateRegNeg(opcode)
+
+        pred_reg = None
+        negate = False
+        if opcode.startswith('@'):
+            opcode = opcode[1:]        
+        if opcode.startswith('!'):
+            negate = True
+            opcode = opcode[1:]
+        if opcode.startswith('P') and opcode[1].isdigit():
+            pred_reg = opcode
+        
         rest_content = line.replace(items[0], "")
+        
         if pred_reg:
-            PFlag = pred_reg 
+            PFlag = Operand.fromReg(pred_reg, pred_reg, None, negate, False, False)
             opcode = items[1]
             rest_content = rest_content.replace(items[1], "")
-        elif pred_reg_neg:
-            PFlag = pred_reg_neg
-            opcode = items[1]
-            rest_content = rest_content.replace(items[1], "")
-            
+
         return opcode, PFlag, rest_content
 
     # Retrieve instruction's operands
@@ -183,108 +153,10 @@ class SaSSParserBase:
         # Parse operands
         Operands = []
         for Operand_Content in Operands_Content:
-            Operands.append(self.ParseOperand(Operand_Content, CurrFunc))
+            Operands.append(Operand.Parse(Operand_Content))
 
         # Create instruction
         return Instruction(InstID, Opcodes, Operands, Opcode_Content + " " + Operands_Detail, None, PFlag)
-
-    # Parse operand
-    def ParseOperand(self, Operand_Content, CurrFunc):
-        Operand_Content = Operand_Content.lstrip()
-        IsReg = False
-        Reg = None
-        Name = None
-        Suffix = None
-        ArgOffset = -1
-        IsArg = False
-        IsMemAddr = False
-        IsImmediate = False
-        ImmediateValue = None
-        # Check if it is an immediate value
-        if Operand_Content.startswith('0x') or Operand_Content.startswith('-0x'):
-            IsImmediate = True
-            Operand_Content = Operand_Content.replace('0x', '')
-            # Convert to integer
-            ImmediateValue = int(Operand_Content, base = 16)
-            Name = Operand_Content
-            Reg = None
-            Suffix = None
-            ArgOffset = -1  # Reset ArgOffset since this is not an argument
-            
-            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, ImmediateValue)
-
-        # Check if it is a register for address pointer, e.g. [R0]
-        if Operand_Content.find(PTRREG_PREFIX) == 0: # operand starts from '[R'
-            # Fill out the ptr related charactors
-            Operand_Content = Operand_Content.replace(PTR_PREFIX, "")
-            Operand_Content = Operand_Content.replace(PTR_SUFFIX, "")
-            IsMemAddr = True
-            
-        # Check if it is a register (including -, ~, or abs '|' as prefix)
-        if Operand_Content.startswith(REG_PREFIX) or Operand_Content.startswith('-') or Operand_Content.startswith('~') or Operand_Content.startswith('|'):
-            IsReg = True
-            Reg = Operand_Content
-            Name = Operand_Content
-            
-            # Get the suffix of given operand
-            items = Reg.split('.')
-            if len(items) > 1:
-                Reg = items[0]
-                Suffix = items[1]
-                if len(items) > 2 and items[2] != "reuse": # reuse is a assembly hint for register reuse
-                        raise InvalidOperandException
-                
-            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
-
-        # Check if it is a jump flag
-        if Operand_Content.find(PATH_PREFIX) == 0 or Operand_Content.startswith('!'): # operand starts from 'P' or '!
-            IsReg = True
-            Reg = Operand_Content
-            Name = Operand_Content
-
-            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
-        
-        # Check if it is a function argument or dimension related value
-        if Operand_Content.find(ARG_PREFIX) == 0: 
-            IsArg = True
-
-            # Get the suffix of given operand
-            items = Operand_Content.split('.')
-            if len(items) > 1:
-                Suffix = items[1]
-                if len(items) > 2:
-                    raise InvalidOperandException
-
-                Operand_Content = items[0]
-        
-            ArgOffset = self.GetArgOffset(Operand_Content.replace(ARG_PREFIX, ""))
-            Name = Operand_Content
-            # Create argument operaand
-            Arg = Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate)
-
-            return Arg
-        
-        # Special zero register
-        if Operand_Content == SR_ZERO:
-            IsReg = True
-            Reg = Operand_Content
-            Name = Operand_Content
-            Suffix = None
-            
-            return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
-        
-        # Check if it is a special register value
-        items = Operand_Content.split('.')
-        if len(items) >= 1:
-            special_regs = [SR_TID, SR_NTID, SR_CTAID, SR_LANE, SR_WARP]
-            for special_reg in special_regs:
-                if items[0].find(special_reg) == 0:
-                    Name = Operand_Content
-                    if len(items) > 1:
-                        Suffix = items[1]
-                    break
-
-        return Operand(Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate, None)
 
     # Parse the argument offset
     def GetArgOffset(self, offset):
@@ -311,7 +183,7 @@ class SaSSParserBase:
             return addr
         for inst in Insts:
             if inst.IsBranch():
-                target_addr = _align_up_to_inst(inst.operands[0].Name.zfill(4))
+                target_addr = _align_up_to_inst(inst.operands[-1].Name.zfill(4))
                 inst.operands[0]._Name = format(target_addr, '04x')
                 inst.operands[0]._ImmediateValue = target_addr
 
@@ -322,7 +194,7 @@ class SaSSParserBase:
             if i > 0 and inst.Predicated() and Insts[i-1].Predicated():
                 # Insert NOP instruction
                 nop_inst = Instruction(
-                    id=f"{hex(InstIdCounter + 1).zfill(4)}",
+                    id=f"{hex(InstIdCounter + 1)[2:].zfill(4)}",
                     opcodes=["NOP"],
                     operands=[],
                     inst_content="NOP",
@@ -330,6 +202,7 @@ class SaSSParserBase:
                     pflag=None
                 )
                 NewInsts.append(nop_inst)
+                InstIdCounter += 1
             NewInsts.append(inst)
         Insts = NewInsts
 
@@ -358,7 +231,7 @@ class SaSSParserBase:
                 if BlockInsts:
                     # Make sure every block contains a terminator
                     if not BlockInsts or (not BlockInsts[-1].IsExit() and not BlockInsts[-1].IsReturn() and not BlockInsts[-1].IsBranch()):
-                        DestOp = Operand(inst.id, None, None, -1, False, False, False, True, int(inst.id, 16))
+                        DestOp = Operand.fromImmediate(inst.id, int(inst.id, 16))                        
                         NewInst = Instruction(
                             id=f"branch_{int(inst.id, 16)}",
                             opcodes=["BRA"],
@@ -409,27 +282,67 @@ class SaSSParserBase:
                     block.AddSucc(nextBlock)
                     nextBlock.AddPred(block)
 
+        # print("Predicate converted CFG:")
+        # for block in Blocks:
+        #     print(f"  Block: {block.addr_content}", end="")
+        #     print(f" from: [", end="")
+        #     for pred in block._preds:
+        #         print(f"{pred.addr_content},", end="")
+        #     print(f"]", end="")
+        #     print(f" to: [", end="")
+        #     for succ in block._succs:
+        #         print(f"{succ.addr_content},", end="")
+        #     print(f"]")
+        #     for inst in block.instructions:
+        #         print(f"    {inst.id}    {inst}")
+
 
         # Add conditional branch for the predecessor of the predicated instruction
-        for block in Blocks:
+        for i, block in enumerate(Blocks):
             firstInst = block.instructions[0]
             if firstInst.Predicated():
                 
-                op = Operand(firstInst.pflag, firstInst.pflag, None, -1, True, False, False)
+                op = firstInst.pflag.Clone()
+
+                if len(block._succs) > 1:
+                    print(f"Warning: predicated block successor > 1")
+                    raise UnmatchedControlCode
+
+                TrueBrBlock = block
+                FalseBrBlock = Blocks[i + 1]
+
+                srcOp1 = Operand.fromImmediate(TrueBrBlock.addr_content, int(TrueBrBlock.addr_content, 16))
+                srcOp2 = Operand.fromImmediate(FalseBrBlock.addr_content, int(FalseBrBlock.addr_content, 16))
+
                 NewInst = Instruction(
                     id=f"pbra_{firstInst.id}",
                     opcodes=["PBRA"],
-                    operands=[op],
+                    operands=[op, srcOp1, srcOp2],
                     inst_content=f"PBRA {firstInst.pflag}",
                     parentBB=None,
                     pflag=None
                 )
 
-                if len(block._preds) != 1:
-                    print(f"Warning: predicate block predecessor != 1")
+                for pred in block._preds:
+                    if FalseBrBlock not in pred._succs:
+                        pred.AddSucc(FalseBrBlock)
+                    if pred not in FalseBrBlock._preds:
+                        FalseBrBlock.AddPred(pred)
+                    pred.SetTerminator(NewInst)
 
-                predBlock = block._preds[0]
-                predBlock.SetTerminator(NewInst)
+        # print("Add conditional branch for the predecessor of the predicated instruction:")
+        # for block in Blocks:
+        #     print(f"  Block: {block.addr_content}", end="")
+        #     print(f" from: [", end="")
+        #     for pred in block._preds:
+        #         print(f"{pred.addr_content},", end="")
+        #     print(f"]", end="")
+        #     print(f" to: [", end="")
+        #     for succ in block._succs:
+        #         print(f"{succ.addr_content},", end="")
+        #     print(f"]")
+        #     for inst in block.instructions:
+        #         print(f"    {inst.id}    {inst}")
 
         # Set parent for each instruction
         for block in Blocks:

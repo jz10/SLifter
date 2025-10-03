@@ -57,6 +57,15 @@ class SetZero(SaSSTransform):
             setzero_inst = self.create_setzero_instruction(inst, dest_reg)
             replaceInsts[inst] = setzero_inst
             return 1
+
+        # Pattern 5: CS2R R26 = SRZ
+        if (inst.opcodes[0] == "CS2R" and 
+            len(inst.operands) >= 2 and
+            inst.operands[1].IsRZ):
+            dest_reg = inst.GetDef()
+            setzero_inst = self.create_setzero_instruction(inst, dest_reg)
+            replaceInsts[inst] = setzero_inst
+            return 1
         
         return 0
 

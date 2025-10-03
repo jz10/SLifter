@@ -1,6 +1,4 @@
 from transform.transform import SaSSTransform
-from sir.operand import Operand
-from sir.instruction import Instruction
 
 class MovEliminate(SaSSTransform):
     def apply(self, module):
@@ -9,41 +7,100 @@ class MovEliminate(SaSSTransform):
 
         for func in module.functions:
             for block in func.blocks:
-                count += process(block)
+                count += self.processBlock(block)
 
         print(f"MovEliminate: removed {count} mov instructions")
         print("=== End of MovEliminate ===")
+    
+    def processBlock(self, block):
+        count = 0
+        newInstructions = []
+        
+        for inst in block.instructions:
+            if self.shouldKeepInstruction(inst, block):
+                newInstructions.append(inst)
+            else:
+                print(f"Removed: {inst}")
+                count += 1
+        
+        block.instructions = newInstructions
+        return count
+    
+    def shouldKeepInstruction(self, inst, block):
+        if inst.pflag is not None:
+            return True
+        
+        copyInfo = self.getCopyInfo(inst)
+        if not copyInfo:
+            return True
+        
+        srcOp, _ = copyInfo
+        if not (srcOp.IsReg or srcOp.IsArg or srcOp.IsImmediate):
+            return True
+        
+        return not self.canEliminateCopy(inst, srcOp, block)
+    
+    def getCopyInfo(self, inst):
+        if not inst.opcodes:
+            return None
+        
+        op0 = inst.opcodes[0]
+        
+        if (op0 == 'MOV' or op0 == 'UMOV') and len(inst.operands) >= 2:
+            return inst.operands[1], inst.operands[0]
+        
+        elif (op0 == 'IMAD' and 'MOV' in inst.opcodes and len(inst.operands) >= 4 and
+              inst.operands[1].IsRZ and inst.operands[2].IsRZ):
+            return inst.operands[3], inst.operands[0]
+        
+        elif op0 == 'MOV32I' and len(inst.operands) >= 2:
+            return inst.operands[1], inst.operands[0]
+        
+        return None
+    
+    def canEliminateCopy(self, inst, srcOp, block):
+        usesList = []
+        for users in inst.Users.values():
+            for useInst, useOp in users:
+                usesList.append((useInst, useOp))
+        
+        sameBlockUses = [(ui, uo) for ui, uo in usesList if ui.parent is block]
+        crossBlockUses = [(ui, uo) for ui, uo in usesList if ui.parent is not block]
+        
+        canReplaceSameBlock = self.canReplaceSameBlockUses(
+            inst, srcOp, sameBlockUses, block)
+        
+        if canReplaceSameBlock:
+            for _, useOp in sameBlockUses:
+                useOp.Replace(srcOp)
+            
+            return len(crossBlockUses) == 0
+        
+        return False
+    
+    def canReplaceSameBlockUses(self, copyInst, srcOp, sameBlockUses, block):
+        if not srcOp.IsReg:
+            return True
+
+        pos = {inst: i for i, inst in enumerate(block.instructions)}
+        if copyInst not in pos:
+            return False
+        instIdx = pos[copyInst]
+
+        srcReg = srcOp.Reg
+        
+        for useInst, _ in sameBlockUses:
+            if useInst not in pos:
+                return False
+            useIdx = pos[useInst]
+
+            for k in range(instIdx + 1, useIdx + 1):
+                for defOp in block.instructions[k].GetDefs():
+                    if defOp and defOp.Reg == srcReg:
+                        return False
+        
+        return True
 
 def process(block):
-    count = 0
-
-    new_instructions = []
-    
-    for inst in block.instructions:
-        if inst.opcodes and inst.opcodes[0] == 'MOV' and inst.operands[1].IsReg:
-            srcReg = inst.operands[1]
-
-            for _, UseOp in inst.Users:
-                UseOp.Replace(srcReg)
-            
-            count += 1
-        # IMAD.MOV.U32 R61 = RZ, RZ, R58 equivalent to MOV R61 = R58
-        elif (inst.opcodes and inst.opcodes[0] == 'IMAD' and len(inst.opcodes) > 1 and 
-              'MOV' in inst.opcodes and len(inst.operands) >= 4):
-           
-            if (inst.operands[1].IsRZ and inst.operands[2].IsRZ and 
-                inst.operands[3].IsReg):
-                srcReg = inst.operands[3]
-                
-                for _, UseOp in inst.Users:
-                    UseOp.Replace(srcReg)
-                
-                count += 1
-            else:
-                new_instructions.append(inst)
-        else:
-            new_instructions.append(inst)
-
-    block.instructions = new_instructions
-    
-    return count
+    eliminator = MovEliminate("legacy")
+    return eliminator.processBlock(block)

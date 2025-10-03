@@ -92,7 +92,7 @@ class BasicBlock:
     def SetTerminator(self, Inst):
         self.instructions[-1] = Inst
 
-    def GetBranchPair(self, Inst):
+    def GetBranchPair(self, Inst, Blocks):
         # Get the branch flag from branch instruction, i.e. P0 or !P0
         PFlag = Inst.GetBranchFlag()
         if PFlag == None:
@@ -101,28 +101,39 @@ class BasicBlock:
         if len(self._succs) != 2:
             print("Warning: More than/less than two successors in basic block")
             
+        BB1 = None
+        BB2 = None
 
-        NegPFlag = "!" + PFlag
+        for BB in Blocks:
+            BBAddress = BB.addr_content
+            if int(BBAddress, 16) == Inst.GetUses()[1].ImmediateValue:
+                BB1 = BB
+            if int(BBAddress, 16) == Inst.GetUses()[2].ImmediateValue:
+                BB2 = BB
 
-        Index = 0
-        
-        for i, BB in enumerate(self._succs):
-            BPFlag = BB.PFlag
-            if PFlag == BPFlag:
-                Index = i
-                break
-            elif NegPFlag == BPFlag:
-                Index = (i + 1) % len(self._succs)
-                break
+        if BB1 == None or BB2 == None:
+            print("Warning: Cannot find the branch target basic block")
+            return None
 
-        return self._succs[Index], self._succs[(Index + 1) % len(self._succs)]
-    
+        return BB1, BB2
+
     def Lift(self, lifter, IRBuilder, IRRegs, BlockMap, ConstMem):
         for inst in self.instructions:
             inst.Lift(lifter, IRBuilder, IRRegs, ConstMem, BlockMap)
 
     def LiftPhiNodes(self, lifter, IRBuilder, IRRegs, BlockMap):
         IRBlock = BlockMap[self]
+
+        def roughSearch(op):
+            reg = op.Reg
+            name = op.GetIRName(lifter)
+            targetType = name.replace(reg, "")
+
+            bestKey = max(IRRegs.keys(), key=lambda k: (k.startswith(reg), len(k)))
+
+            val = IRBuilder.bitcast(IRRegs[bestKey], op.GetIRType(lifter), f"{name}_cast")
+
+            return val
 
         for i, inst in enumerate(self.instructions):
             if inst.opcodes[0] == "PHI" or inst.opcodes[0] == "PHI64":
@@ -136,7 +147,11 @@ class BasicBlock:
                     elif op.IsPT:
                         val = lifter.ir.Constant(op.GetIRType(lifter), 1)
                     else:
-                        val = IRRegs[op.GetIRRegName(lifter)]
+                        irName = op.GetIRName(lifter)
+                        if irName not in IRRegs:
+                            val = roughSearch(op)
+                        else:
+                            val = IRRegs[irName]
                     IRInst.add_incoming(val, BlockMap[pred_bb])
 
     def dump(self):

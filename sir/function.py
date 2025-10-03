@@ -27,32 +27,22 @@ class Function:
             self.regs.extend(regs)
         
     # Get the arguments for current function
-    def GetArgs(self):
-        ArgIdxes = []
+    def GetArgs(self, lifter):
         Args = []
 
         ArgMap = {}
         # Collect the arguments
         for BB in self.blocks:
             for inst in BB.instructions:
-                    for Operand in inst.operands:
-                        if Operand.IsArg:
-                            Offset = Operand.ArgOffset
-                            ArgMap[Offset] = Operand
+                for Operand in inst.operands:
+                    if Operand.IsArg:
+                        Name = Operand.GetIRName(lifter)
+                        ArgMap[Name] = Operand
 
         # Sort the map
-        SortedArgs = {key: val for key, val in
-                      sorted(ArgMap.items(), key = lambda ele: ele[0])}
+        Args = sorted(ArgMap.values(), key=lambda x: x.ArgOffset)
 
-        # Collect the keys
-        for Offset, Operand in SortedArgs.items():
-            if Operand.Skipped: # This is the case that the operand may be the associated operand
-                continue
-            else:
-                ArgIdxes.append(Offset)
-                Args.append(Operand)
-                
-        return ArgIdxes, Args
+        return Args
 
     # Get the registers used in this function
     def GetRegs(self, lifter):
@@ -89,9 +79,9 @@ class Function:
     # Lift to LLVM IR
     def Lift(self, lifter, llvm_module, func_name):
         # Collect arguments
-        ArgIdxes, Args = self.GetArgs()
-        
-        
+        Args = self.GetArgs(lifter)
+
+
         FuncTy = lifter.ir.FunctionType(lifter.ir.VoidType(), [])
         IRFunc = lifter.ir.Function(llvm_module, FuncTy, self.name)
 
@@ -112,11 +102,11 @@ class Function:
             if entry.ArgOffset in OFFSET_TO_SR:
                 name = OFFSET_TO_SR[entry.ArgOffset]
             else:
-                name = f"c[0x0][{hex(entry.ArgOffset)}]"
+                name = entry.GetIRName(lifter)
 
             addr = Builder.bitcast(addr, lifter.ir.PointerType(lifter.GetIRType(entry.TypeDesc)))
             val = Builder.load(addr, name)
-            ConstMem[entry.ArgOffset] = val
+            ConstMem[entry.GetIRName(lifter)] = val
 
         # SSA mapping: register names to LLVM IR values
         IRRegs = {}

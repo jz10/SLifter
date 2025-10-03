@@ -30,25 +30,28 @@ class FPHack(SaSSTransform):
         inst3 = None
         inst4 = None
 
-        for useInst, useOp in inst.Users:
-            if useInst.opcodes[0] == "MUFU":
-                inst2 = useInst
+        for users in inst.Users.values():
+            for useInst, useOp in users:
+                if useInst.opcodes[0] == "MUFU":
+                    inst2 = useInst
 
         if not inst2:
             return 0
         
-        for useInst, useOp in inst2.Users:
-            if useInst.opcodes[0] == "IADD32I" or useInst.opcodes[0] == "IADD3":
-                inst3 = useInst
-                iaddUseOp = useOp
+        for users in inst2.Users.values():
+            for useInst, useOp in users:
+                if useInst.opcodes[0] == "IADD32I" or useInst.opcodes[0] == "IADD3":
+                    inst3 = useInst
+                    iaddUseOp = useOp
 
         if not inst3:
             return 0
         
-        for useInst, useOp in inst3.Users:
-            if useInst.opcodes[0] == "F2I":
-                inst4 = useInst
-                f2iUseOp = useOp
+        for users in inst3.Users.values():
+            for useInst, useOp in users:
+                if useInst.opcodes[0] == "F2I":
+                    inst4 = useInst
+                    f2iUseOp = useOp
 
         if not inst4:
             return 0
@@ -58,8 +61,9 @@ class FPHack(SaSSTransform):
         dest_op.SetReg(src_op.Name + "_cast")
         iaddUseOp.SetReg(src_op.Name + "_cast")
 
-        for useInst, useOp in inst2.Users:
-            useOp.SetReg(src_op.Name + "_cast")
+        for users in inst2.Users.values():
+            for useInst, useOp in users:
+                useOp.SetReg(src_op.Name + "_cast")
 
         bitcastInstBefore = Instruction(
             id=f"{inst2.id}_bitcast_before",
