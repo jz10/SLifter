@@ -26,3 +26,8 @@ if pytest:
                             ids=lambda b: b.split("/", 1)[1])
     def test_others(base, tmp_path):
         execute_test_case(BASES, base, SM)
+
+    @pytest.mark.parametrize("base", get_bases_for_sm_suite(BASES, SM, "hecbench"), 
+                            ids=lambda b: b.split("/", 1)[1])
+    def test_hecbench(base, tmp_path):
+        execute_test_case(BASES, base, SM)

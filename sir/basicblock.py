@@ -90,7 +90,9 @@ class BasicBlock:
         return self.instructions[-1]
 
     def SetTerminator(self, Inst):
+        Inst = Inst.Clone()
         self.instructions[-1] = Inst
+        Inst._Parent = self
 
     def GetBranchPair(self, Inst, Blocks):
         # Get the branch flag from branch instruction, i.e. P0 or !P0

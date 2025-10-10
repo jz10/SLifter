@@ -20,6 +20,8 @@ class DefUseAnalysis(SaSSTransform):
                 inst.ReachingDefs = {}
                 inst.ReachingDefsSet = {}
                 inst.Users = {}
+                for op in inst.operands:
+                    op.DefiningInsts = set()
 
 
         # Build the def-use chains
@@ -43,6 +45,7 @@ class DefUseAnalysis(SaSSTransform):
                     # Each entry in CurrDefs is (DefInst, DefOp)
                     for DefInst, DefOp in CurrDefs.get(UseOp.Reg, set()):
                         DefInst.Users.setdefault(DefOp, set()).add((Inst, UseOp))
+                        UseOp.DefiningInsts.add(DefInst)
                         Inst.ReachingDefs[UseOp] = DefInst
                         Inst.ReachingDefsSet.setdefault(UseOp, set()).add((DefInst, DefOp))
 

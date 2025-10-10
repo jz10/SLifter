@@ -80,7 +80,6 @@ class SSA(SaSSTransform):
             id=f"phi_{reg}_{block.addr_content}",
             opcodes=["PHI"],
             operands=operands,
-            inst_content=f"PHI {dest_op.Name}",
             parentBB=block
         )
         return phi

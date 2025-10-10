@@ -35,6 +35,7 @@ class DCE(SaSSTransform):
             "SULD",
             "MATCH",
             "RED",
+            "LDG64",
         ])
 
         live = []

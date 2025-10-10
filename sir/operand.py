@@ -1,4 +1,5 @@
 from lift.lifter import Lifter
+import ctypes
 
 # Special register constants
 SR_TID = 'SR_TID'
@@ -18,8 +19,14 @@ class Operand:
 
         # Check if it is an immediate value
         if Operand_Content.startswith('0x') or Operand_Content.startswith('-0x'):
-            # Convert to integer
-            ImmediateValue = int(Operand_Content.replace('0x', ''), base = 16)
+            # Convert to integer, handle pairs as well
+            # E.g. -0x1:-0x1=>-0x1, 0x0:0xFF=>0xFF
+            ValueStrs = Operand_Content.split(":")
+            if len(ValueStrs) == 2:
+                ImmediateValue = ((int(ValueStrs[1], 0) & 0xFFFFFFFF) << 32) | (int(ValueStrs[0], 0) & 0xFFFFFFFF)
+                ImmediateValue = ctypes.c_int64(ImmediateValue).value
+            else:
+                ImmediateValue = int(ValueStrs[0], 0)
             Name = Operand_Content
             return Operand.fromImmediate(Name, ImmediateValue)
 
@@ -77,6 +84,8 @@ class Operand:
         # Check if it is a function argument or dimension related value
         if Reg.startswith("c["):
             content = Reg.replace("c[0x0][", "").replace("]", "")
+            # c[0x0][0x164]:c[0x0][0x160] => use 0x160 as offset
+            content = content.split(":")[-1] 
             offset = int(content, base = 16)
 
             return Operand.fromArg(Operand_Content, offset, Negate, Not, Abs)
@@ -125,6 +134,7 @@ class Operand:
         self._TypeDesc = "NOTYPE"
         self._IRType = None
         self._IRRegName = None
+        self.DefiningInsts = set()
 
     @property
     def Name(self):
@@ -313,6 +323,8 @@ class Operand:
         self._TypeDesc = other._TypeDesc
         self._IRType = other._IRType
         self._IRRegName = other._IRRegName
+        # Parent don't change 
+        # self._Parent = other._Parent
 
     # Set the type description for operand
     def SetTypeDesc(self, Ty):

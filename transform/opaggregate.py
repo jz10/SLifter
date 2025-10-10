@@ -2,307 +2,9 @@ from transform.transform import SaSSTransform
 from sir.instruction import Instruction
 from sir.operand import Operand
 from collections import deque
+from bisect import bisect_right
 
-
-PatternTable = {
-    ("PACK64","PACK64"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["PACK64"],
-                    "def": ["reg1"],
-                    "use": ["reg2", "reg3"],
-                },
-                {
-                    "opcodes": ["PACK64"],
-                    "def": ["reg1"],
-                    "use": ["reg2", "reg3"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["MOV64"],
-                    "def": ["reg1"],
-                    "use": ["reg3:reg2"],
-                }
-            ],
-        }
-    ],
-
-    ("ISETP", "ISETP"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["ISETP", "op1", "U32", "AND"],
-                    "def": ["pred1"],
-                    "use": ["PT", "reg1", "imm1", "PT"],
-                },
-                {
-                    "opcodes": ["ISETP", "op1", "AND", "EX"],
-                    "def": ["pred2"],
-                    "use": ["PT", "reg2", "imm2", "PT", "pred1"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["ISETP64", "op1", "AND"],
-                    "def": ["pred2"],
-                    "use": ["reg2:reg1", "imm2:imm1", "PT"],
-                }
-            ],
-        },
-        {
-            "in": [
-                {
-                    "opcodes": ["ISETP", "op1", "U32", "AND"],
-                    "def": ["pred1"],
-                    "use": ["PT", "reg1", "imm1", "PT"],
-                },
-                {
-                    "opcodes": ["ISETP", "op1", "U32", "AND", "EX"],
-                    "def": ["pred2"],
-                    "use": ["PT", "reg2", "imm2", "PT", "pred1"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["ISETP64", "op1", "AND"],
-                    "def": ["pred2"],
-                    "use": ["reg2:reg1", "imm2:imm1", "PT"],
-                }
-            ],
-        }
-    ],
-    ("LDG", "LDG"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["LDG", "E", "64", "SYS"],
-                    "def": ["reg1", "reg2"],
-                    "use": ["reg3"],
-                },
-                {
-                    "opcodes": ["LDG", "E", "64", "SYS"],
-                    "def": ["reg1", "reg2"],
-                    "use": ["reg3"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["LDG64", "E", "SYS"],
-                    "def": ["reg2:reg1"],
-                    "use": ["reg3"],
-                }
-            ],
-        }
-    ],
-    ("LEA", "LEA"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["LEA"],
-                    "def": ["reg1", "pred1"],
-                    "use": ["reg2", "op1", "imm1"],
-                },
-                {
-                    "opcodes": ["LEA", "HI", "X"],
-                    "def": ["reg3"],
-                    "use": ["reg2", "op2", "reg4", "imm1", "pred1"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["LEA64"],
-                    "def": ["reg3:reg1"],
-                    "use": ["reg4:reg2", "op2:op1", "imm1"],
-                }
-            ],
-        }
-    ],
-    ("PHI", "PHI"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["PHI"],
-                    "def": ["reg1"],
-                    "use": "pack_low",
-                },
-                {
-                    "opcodes": ["PHI"],
-                    "def": ["reg2"],
-                    "use": "pack_high",
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["PHI64"],
-                    "def": ["reg2:reg1"],
-                    "use": "pack",
-                }
-            ],
-        }
-    ],
-
-    ("IMAD","IMAD"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["IMAD", "WIDE"],
-                    "def": ["reg1", "reg2"],
-                    "use": ["reg3", "op1"],
-                },
-                {
-                    "opcodes": ["IMAD", "WIDE"],
-                    "def": ["reg1", "reg2"],
-                    "use": ["reg3", "op1"],
-                }
-            ],
-            "out": [
-                {
-                    "opcodes": ["IMAD64"],
-                    "def": ["reg2:reg1"],
-                    "use": ["reg3", "op1"],
-                }
-            ],
-        },
-    ],
-    ("IMAD", "ANY"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["IMAD", "MOV", "U32"],
-                    "def": ["reg1"],
-                    "use": ["RZ", "RZ", "reg2"],
-                },
-                {
-                    "opcodes": [],
-                    "def": ["reg3"],
-                    "use": [],
-                    "keep": True,
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["MOV64"],
-                    "def": ["reg3:reg1"],
-                    "use": ["reg3:reg2"],
-                }
-            ],
-        },
-    ],
-    ("NONE", "IMAD"): [
-        {
-            "in": [
-                {
-                    "opcodes": ["IMAD", "MOV", "U32"],
-                    "def": ["reg1"],
-                    "use": ["RZ", "RZ", "reg2"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["AND64"],
-                    "def": ["RZ:reg1"],
-                    "use": ["reg3:reg2", "0x0000ffff"],
-                },
-            ],
-        },
-    ],
-    ("ANY", "SHF"): [
-        {
-            "in": [
-                {
-                  "opcodes": [],
-                  "def": [],
-                  "use": [],
-                  "keep": True,
-                },
-                {
-                    "opcodes": ["SHF", "R", "S32", "HI"],
-                    "def": ["reg3"],
-                    "use": ["RZ", "0x1f", "reg1"],
-                }
-            ],
-            "out": [
-                {
-                    "opcodes": ["SHR64"],
-                    "def": ["reg3:reg1"],
-                    "use": ["reg1:reg2", "0x20"],
-                },
-                # {
-                #     "opcodes": ["CAST64"],
-                #     "def": ["reg2:reg3"],
-                #     "use": ["reg3"],
-                # }
-            ],
-        }
-    ],
-    ("IADD3", "IADD3"): [
-        { # weird pattern observed from wyllie
-            "in": [
-                {
-                    "opcodes": ["IADD3"],
-                    "def": ["reg1", "pred1", "pred2"],
-                    "use": ["RZ", "reg3", "reg4"],
-                },
-                {
-                    "opcodes": ["IADD3", "X"],
-                    "def": ["reg5"],
-                    "use": ["reg6", "RZ", "RZ", "pred1", "pred2"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["IADD364"],
-                    "def": ["reg5:reg1"],
-                    "use": ["RZ", "reg6:reg3", "RZ:reg4"],
-                }
-            ],
-        },
-        {
-            "in": [
-                {
-                    "opcodes": ["IADD3"],
-                    "def": ["reg1", "pred1", "pred2"],
-                    "use": ["reg2", "reg3", "reg4"],
-                },
-                {
-                    "opcodes": ["IADD3", "X"],
-                    "def": ["reg5"],
-                    "use": ["reg6", "reg7", "reg8", "pred1", "pred2"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["IADD364"],
-                    "def": ["reg5:reg1"],
-                    "use": ["reg6:reg2", "reg7:reg3", "reg8:reg4"],
-                }
-            ],
-        },
-        {
-            "in": [
-                {
-                    "opcodes": ["IADD3"],
-                    "def": ["reg1", "pred1"],
-                    "use": ["reg2", "reg3", "reg4"],
-                },
-                {
-                    "opcodes": ["IADD3", "X"],
-                    "def": ["reg5"],
-                    "use": ["reg6", "reg7", "reg8", "pred1", "!PT"],
-                },
-            ],
-            "out": [
-                {
-                    "opcodes": ["IADD364"],
-                    "def": ["reg5:reg1"],
-                    "use": ["reg6:reg2", "reg7:reg3", "reg8:reg4"],
-                }
-            ],
-        },
-    ],
-}
+from transform.opaggregate_patterns import PatternTable
 
 class OperAggregate(SaSSTransform):
     def apply(self, module):
@@ -313,180 +15,196 @@ class OperAggregate(SaSSTransform):
 
         for func in module.functions:
 
-            # Pack64Insts = self.GetPack64Instructions(func)
-            
-            # LDG64Insts = self.GetLDG64Instructions(func)
-            
-            SeedInstPairs = self.FindSeedInstructions(func)
+            self.InsertInsts = {}
+            self.RemoveInsts = set()
+            self.HandledInsts = set()
+            self.KnownRegPairs = {}
+            self.ProcessedPatterns = []
 
-            InsertInsts, RemoveInsts = self.TrackPatterns(SeedInstPairs)
+            SeedPatterns = self.FindSeedPatterns(func)
 
-            self.ApplyChanges(func, InsertInsts, RemoveInsts)
+            self.TrackPatterns(SeedPatterns)
+            
+            self.FixRegisterDependencies()
+
+            self.ApplyChanges(func)
 
             print(f"Function {func.name}:")
-            print(f"OperAggregate Insert Instructions: {len(InsertInsts)}")
-            print(f"OperAggregate Remove Instructions: {len(RemoveInsts)}")
+            print(f"OperAggregate Insert Instructions: {len(self.InsertInsts)}")
+            print(f"OperAggregate Remove Instructions: {len(self.RemoveInsts)}")
 
-            totalInsert += len(InsertInsts)
-            totalRemove += len(RemoveInsts)
+            totalInsert += len(self.InsertInsts)
+            totalRemove += len(self.RemoveInsts)
 
         print(f"Total OperAggregate Insert Instructions: {totalInsert}")
         print(f"Total OperAggregate Remove Instructions: {totalRemove}")
         
         print("=== End of Operator Aggregation Transformation ===")
         
-    def GetLDG64Instructions(self, func):
-        LDG64Insts = []
-        for bb in func.blocks:
-            for inst in bb.instructions:
-                if len(inst.opcodes) > 0 and inst.opcodes[0] == "LDG" and "64" in inst.opcodes:
-                    LDG64Insts.append(inst)
+    # def GetLDG64Instructions(self, func):
+    #     LDG64Insts = []
+    #     for bb in func.blocks:
+    #         for inst in bb.instructions:
+    #             if len(inst.opcodes) > 0 and inst.opcodes[0] == "LDG" and "64" in inst.opcodes:
+    #                 LDG64Insts.append(inst)
 
-        return LDG64Insts
+    #     return LDG64Insts
             
-    def GetPack64Instructions(self, func):
-        Pack64Insts = []
-        for bb in func.blocks:
-            for inst in bb.instructions:
-                if len(inst.opcodes) > 0 and inst.opcodes[0] == "PACK64":
-                    Pack64Insts.append(inst)
+    # def GetPack64Instructions(self, func):
+    #     Pack64Insts = []
+    #     for bb in func.blocks:
+    #         for inst in bb.instructions:
+    #             if len(inst.opcodes) > 0 and inst.opcodes[0] == "PACK64":
+    #                 Pack64Insts.append(inst)
 
-        return Pack64Insts
+    #     return Pack64Insts
     
-    def FindSeedInstructions(self, func):
-        SeedInsts = []
+    def IterateOpcodes(self, OpcodeInstDict, OpcodeSeq, OrderIndex):
+        """
+        ai.
+        Yield instruction tuples (i0, i1, ..., in) where i_k has opcode OpcodeSeq[k],
+        and their program order is strictly increasing within the basic block.
+        """
+        InstLists = []
+        for op in OpcodeSeq:
+            lst = OpcodeInstDict.get(op)
+            if not lst:
+                return
+            InstLists.append(lst)
+
+        def dfs(k, prev_idx, acc):
+            if k == len(InstLists):
+                yield tuple(acc)
+                return
+            for inst in InstLists[k]:
+                idx = OrderIndex.get(inst)
+                if idx is None:
+                    continue
+                if prev_idx is None or idx > prev_idx:
+                    acc.append(inst)
+                    yield from dfs(k + 1, idx, acc)
+                    acc.pop()
+
+        yield from dfs(0, None, [])
+
+    
+    def FindSeedPatterns(self, func):
+        SeedPatterns = []
         
-        OpcodeMatchDict = {}
+        OpcodePatterns = []
         
         for patternKey in PatternTable.keys():
-            op1, op2 = patternKey
-            if op1 != "ANY" and op2 != "ANY" and op1 != "PHI" and op2 != "PHI":
-                OpcodeMatchDict.setdefault(op1, set()).add(op2)
-        
+            # phi and mov not matched because they can be trivially paired
+            if not patternKey or patternKey[0] == "PHI" or patternKey[0] == "MOV":
+                continue
+            OpcodePatterns.append(patternKey)
+    
         for bb in func.blocks:
             # Cache instruction by opcode for quick lookup
             OpcodeInstDict = {}
-            for inst in bb.instructions:
+            OrderIndex = {}
+            for idx, inst in enumerate(bb.instructions):
                 if len(inst.opcodes) == 0:
                     continue
+                OrderIndex[inst] = idx
                 OpcodeInstDict.setdefault(inst.opcodes[0], []).append(inst)
                 
             print(f"Processing basic block...")
             
             # Find seed instruction pairs
-            for op1 in OpcodeMatchDict:
-                if op1 not in OpcodeInstDict:
+            for OpcodeSeq in OpcodePatterns:
+                # quick skip if any opcode is absent in this block
+                if any(op not in OpcodeInstDict for op in OpcodeSeq):
                     continue
-                for inst1 in OpcodeInstDict[op1]:
-                    for op2 in OpcodeMatchDict[op1]:
-                        if op2 not in OpcodeInstDict:
-                            continue
-                        for inst2 in OpcodeInstDict[op2]:
-                            status, _, _, _, _ = self.Match(inst1, inst2, {}, CheckOnly=True, MatchAny=False)
-                            if status:
-                                SeedInsts.append((inst1, inst2))
-                                print(f"Found seed instruction pair: (<{inst1}>, <{inst2}>)")
-        return SeedInsts
 
-    def TrackPatterns(self, SeedInstPairs):
+                for InstTuple in self.IterateOpcodes(OpcodeInstDict, OpcodeSeq, OrderIndex):
+                    # print(f"Trying instruction tuple: ({', '.join(f'<{inst}>' for inst in InstTuple)})")
+                    
+                    status, _, _ = self.Match(list(InstTuple), CheckOnly=True)
+                    if status:
+                        SeedPatterns.append(list(InstTuple))
+                        print(f"Found seed instruction tuple: ({', '.join(f'<{inst}>' for inst in InstTuple)})")
 
-        InsertInsts = {}
-        RemoveInsts = set()
-        HandledInsts = set()
-        
+        return SeedPatterns
+    
+    
+
+    def TrackPatterns(self, SeedPatterns):
         # reg3:reg2 -> (reg2,reg3) dictionary
         # all regs are SSA so no conflict
-        KnownRegPairs = {} 
         Queue = deque()
 
-        for SeedInst1, SeedInst2 in SeedInstPairs:
-            Queue.append((SeedInst1, SeedInst2))
+        for SeedPattern in SeedPatterns:
+            Queue.append(SeedPattern)
 
         while len(Queue) > 0:
-            (Inst1, Inst2) = Queue.popleft()
-
-            print(f"\n\n(<{Inst1}>, <{Inst2}>)")
-
-            # Identify pattern, get replace instruction, next reg pairs candidates
-            Status, MergeInst, RegPairs, KeepIn1, KeepIn2 = self.Match(Inst1, Inst2, KnownRegPairs)
-            if not Status:
-                raise Exception("Should match here")
-            else:
-                print(f" => {MergeInst}")
-                
-            if (not KeepIn1 and Inst1 in HandledInsts) or (not KeepIn2 and Inst2 in HandledInsts):
-                print("\tPair already handled, skipping")
+            PatternInsts = Queue.popleft()
+            
+            print(f"({', '.join(f'<{inst}>' for inst in PatternInsts)})")
+                    
+            if len(PatternInsts) == 0:
                 continue
 
-            if not KeepIn1:
-                HandledInsts.add(Inst1)
-            if not KeepIn2:
-                HandledInsts.add(Inst2)            
-
-            EndOfChain = False
-            if len(RegPairs) == 0:
-                EndOfChain = True
+            # Identify pattern, get replace instruction, next reg pairs candidates
+            Status, MergeInsts, RegPairs = self.Match(PatternInsts)
+                
+                
+            # Skip if any inst in patternInsts is already handled
+            if (any(inst in self.HandledInsts for inst in PatternInsts)):
+                # If not all of them being handled, print a warning
+                if not all(inst in self.HandledInsts for inst in PatternInsts):
+                    print(f"\tWarning: not all instructions handled for pattern {PatternInsts}")
+                print("=> Already handled, skipping\n")
+                continue
             
-            # For each reg pair, make sure all def instructions are covered
+            # Check match status
+            if not Status:
+                print(f"\tChain ended for this pair")
+                print("=> No pattern match\n")
+                continue
+                
+            # Mark all instructions in pattern as handled
+            for inst in PatternInsts:
+                self.HandledInsts.add(inst)
+
+            EndOfChain = (len(RegPairs) == 0)
+            
+            # Convert operands to instructions
+            NextPatterns = []
             for RegPair in RegPairs: 
-                MatchingPairs = self.GetMatchingPairs(RegPair, KnownRegPairs)
+                NextPatterns.extend(self.GetMatchingPairs(RegPair))
                 
-                # If an input is kept, we do not advance its def-use chain
-                if not KeepIn1:
-                    Reg1Defs = Inst1.ReachingDefsSet.get(RegPair[0][0])
-                else:
-                    Reg1Defs = set()
-                    Reg1Defs.add((RegPair[0][0].Parent, RegPair[0][0]))
+            
+                # For each reg pair, make sure all def instructions are covered
+                # Reg1Defs = set()
+                # Reg1Defs.add((RegPair[0][0].Parent, RegPair[0][0]))
                     
-                if not KeepIn2:
-                    Reg2Defs = Inst2.ReachingDefsSet.get(RegPair[1][0])
-                else:
-                    Reg2Defs = set()
-                    Reg2Defs.add((RegPair[1][0].Parent, RegPair[1][0]))
+                # Reg2Defs = set()
+                # Reg2Defs.add((RegPair[1][0].Parent, RegPair[1][0]))
 
 
-                if not self.AllDefsCovered(MatchingPairs, Reg1Defs, Reg2Defs):
-                    InsertInsts[Inst1].append(self.CreatePack64(Inst1, RegPair[0], RegPair[1]))
-                    EndOfChain = True
-                    print(f"\tPack64 inserted for operand ({RegPair[0][1]}, {RegPair[1][1]})")
-                    
-            # # Heuristic: explore users of the current instruction pair
-            # # Algorithm should generally go upward(use->def), but sometimes going downward helps(def->use)
-            # # The reason is not all chain of patterns end up in pack64/ldg64.
-            # if not KeepIn1 and not KeepIn2:
-            #     Inst1Users = Inst1.Users[DefReg1]
-            #     Inst2Users = Inst2.Users[DefReg2]
-            #     if len(Inst1Users) == len(Inst2Users):
-            #         for i in range(len(Inst1Users)):
-            #             user1, useOp1 = list(Inst1Users)[i]
-            #             user2, useOp2 = list(Inst2Users)[i]
-            #             if self.ControlEquivalent(user1, user2):
-            #                 status, _, _, _, _ = self.Match(user1, user2, UnresolvedRegPairs, CheckOnly=True)
-            #                 if status and user1 not in HandledInsts and user2 not in HandledInsts:
-            #                     print(f"\tNext pair(def->use): ({user1}, {user2})")
-            #                     Queue.append(((user1, user1.GetDefs()[0]), (user2, user2.GetDefs()[0])))
-            #     else:
-            #         print(f"\tWarning: users length mismatch between {Inst1} and {Inst2}, skip exploring users")
-
-            if not KeepIn1:
-                RemoveInsts.add(Inst1)
-            if not KeepIn2:
-                RemoveInsts.add(Inst2)
+                # if not self.AllDefsCovered(MatchingPairs, Reg1Defs, Reg2Defs):
+                #     InsertInsts[Inst1].append(self.CreatePack64(Inst1, RegPair[0], RegPair[1]))
+                #     EndOfChain = True
+                #     print(f"\tPack64 inserted for operand ({RegPair[0][1]}, {RegPair[1][1]})")
                 
-            InsertInsts[Inst1] = MergeInst
+            # Add to processed patterns
+            self.ProcessedPatterns.append([PatternInsts, MergeInsts])
 
             if not EndOfChain:
-                Queue.extend(MatchingPairs)
-                for RegPair in MatchingPairs:
-                    print(f"\tNext pair(use->def): ({RegPair[0][0]}, {RegPair[1][0]})")
+                Queue.extend(NextPatterns)
+                for NextPattern in NextPatterns:
+                    print(f"\tNext pair(use->def): (", end="")
+                    for NextPatternInst in NextPattern:
+                        print(f"{NextPatternInst},", end=" ")
+                    print(")")
             else:
                 print(f"\tChain ended for this pair")
-            
-        return InsertInsts, RemoveInsts
+
+            print(f"=> {MergeInsts}\n")
 
     # CheckOnly: won't generate new instructions
-    # MatchAny: match ANY opcode patterns
-    def Match(self, Inst1, Inst2, KnownRegPairs, CheckOnly=False, MatchAny=True):
+    def Match(self, PatternInsts, CheckOnly=False, ResolveDefine=True):
 
         def IsVariable(token):
             prefixes = ("reg", "pred", "const", "op", "imm")
@@ -512,83 +230,184 @@ class OperAggregate(SaSSTransform):
             if prefix == "op":
                 return True
             return True
-
-        def MatchArray(PatternArray, InstArray, Variables):
-            if PatternArray == "pack_low":
-                PatternArray = [f"reg_pack_low_{i}" for i in range(len(InstArray))]
-            elif PatternArray == "pack_high":
-                PatternArray = [f"reg_pack_high_{i}" for i in range(len(InstArray))]
-            
-            if len(PatternArray) > len(InstArray):
+        
+        def MatchOpcodes(PatternOpcodes, InstOpcodes, Variables):
+            if len(PatternOpcodes) != len(InstOpcodes):
                 return False
-
-            for p, i in zip(PatternArray, InstArray):
-                if IsVariable(p):
-                    if not VariableTypeMatches(p, i):
+            
+            for patternOpcode, opcode in zip(PatternOpcodes, InstOpcodes):
+                if "op" in patternOpcode:
+                    if patternOpcode in Variables and Variables[patternOpcode] != opcode:
                         return False
-                    if p in Variables:
-                        if isinstance(i, Operand):
-                            if Variables[p].Name != i.Name:
-                                return False
-                        else:
-                            if Variables[p] != i:
-                                return False
                     else:
-                        Variables[p] = i
+                        Variables[patternOpcode] = opcode
                 else:
-                    if isinstance(i, Operand):
-                        if p != i.Name:
-                            return False
-                    else:
-                        if p != i:
-                            return False
+                    if patternOpcode != opcode:
+                        return False
             return True
         
-        def GenArray(PatternArray, Variables, PostFunc=None):
-            if PatternArray == "pack":
-                PatternArray = []
-                for var in Variables:
-                    if var.startswith("reg_pack_low_"):
-                        PatternArray.append(var)
-                PatternArray = sorted(PatternArray)
+        def MatchOperands(PatternOperands, InstOperands, Variables):
+            if len(PatternOperands) == 1 and "[*]" in PatternOperands[0]:
+                PatternOperands = [PatternOperands[0].replace("[*]", str(i)) for i in range(len(InstOperands))]
+                Variables["pack_length"] = len(InstOperands)
+
+            if len(PatternOperands) > len(InstOperands):
+                return False
             
-            Array = []
-            
-            for i, p in enumerate(PatternArray):
-                if ":" in p: # reg2:reg1 => use reg1 to represent x64 value
-                    p = p.split(":")[1]
-                if IsVariable(p):
-                    value = Variables[p]
-                    if hasattr(value, "Name"):
-                        Array.append(value.Name)
+            for patternOperand, operand in zip(PatternOperands, InstOperands):
+                if IsVariable(patternOperand):
+                    if not VariableTypeMatches(patternOperand, operand):
+                        return False
+                    if patternOperand in Variables and Variables[patternOperand].Name != operand.Name:
+                        return False
                     else:
-                        Array.append(value)
+                        Variables[patternOperand] = operand
                 else:
-                    Array.append(p)
-                    
-            for i, p in enumerate(Array):
-                if PostFunc is not None:
-                    Array[i] = PostFunc(p)
-                    
+                    if patternOperand != operand.Name:
+                        return False
+            return True
+        
+        def GenArray(PatternArray, Variables, Operand=Operand.Parse):
+            Array = []
+            for item in PatternArray:
+                if IsVariable(item):
+                    if item in Variables:
+                        Array.append(Variables[item])
+                    else:
+                        Array.append(Operand(item))
+                else:
+                    Array.append(Operand.Parse(item))
             return Array
         
-        # Try to match one or two instructions
-        currentPatterns = []
-        isOneInstPattern = False
-        if MatchAny and ("ANY", Inst2.opcodes[0]) in PatternTable:
-            currentPatterns.extend(PatternTable[("ANY", Inst2.opcodes[0])])
-            matchInsts = [Inst1, Inst2]
-            isOneInstPattern = True
-        if MatchAny and (Inst1.opcodes[0], "ANY") in PatternTable:
-            currentPatterns.extend(PatternTable[(Inst1.opcodes[0], "ANY")])
-            matchInsts = [Inst1, Inst2]
-            isOneInstPattern = True
-        if (Inst1.opcodes[0], Inst2.opcodes[0]) in PatternTable:
-            currentPatterns.extend(PatternTable[(Inst1.opcodes[0], Inst2.opcodes[0])])
-            matchInsts = [Inst1, Inst2]
+        def ResolveDefined(PatternDefined, Variables):
+            def FindOperandInDefInst(regOpInUseInst):
+                if len(regOpInUseInst.DefiningInsts) > 1:
+                    raise Exception("Multiple defining instructions found for operand")
+                
+                for defInst in regOpInUseInst.DefiningInsts:
+                    for defOp in defInst.GetDefs():
+                        if defOp.Reg == regOpInUseInst.Reg:
+                            return defOp
+                return None
+            
+            if len(PatternDefined) == 0:
+                return True
+            
+            for patternDef in PatternDefined:
+                regs = patternDef.split(":")
+                if len(regs) != 2:
+                    raise Exception("Defined reg pair must have two regs")
+                
+                reg2, reg1 = regs
+                
+                # Find the corresponding operands in defining instructions
+                if reg1 in Variables:
+                    reg1DefOp = FindOperandInDefInst(Variables[reg1])
+                if reg2 in Variables:
+                    reg2DefOp = FindOperandInDefInst(Variables[reg2])
+                    
+                
+                if reg1 in Variables and reg1DefOp in self.KnownRegPairs:
+                    Variables[reg2] = self.KnownRegPairs[reg1DefOp][0]
+                elif reg2 in Variables and reg2DefOp in self.KnownRegPairs:
+                    Variables[reg1] = self.KnownRegPairs[reg2DefOp][1]
+                else:
+                    return False
+                
+            return True
         
-        if len(currentPatterns) == 0:
-            return False, None, None, None, None
+        def UpdateDefToKnownRegPairs(PatternOperands, Variables):
+            if len(PatternOperands) == 1 and "[*]" in PatternOperands[0]:
+                OperandsLength = Variables["pack_length"]
+                PatternOperands = [PatternOperands[0].replace("[*]", str(i)) for i in range(OperandsLength)]
+
+            for PatternOperand in PatternOperands:
+                p = PatternOperand.split(":")
+                for i in range(len(p)):
+                    if IsVariable(p[i]):
+                        var = Variables[p[i]]
+                    else:
+                        var = p[i]
+                    p[i] = var
+
+                if len(p) == 2:
+                    print(f"\tKnown reg pair: ({p[0]}, {p[1]})")
+                    self.KnownRegPairs[p[0]] = (p[0], p[1])
+                    self.KnownRegPairs[p[1]] = (p[0], p[1])
+                        
+        def GenOpcodes(PatternArray, Variables):
+            Opcodes = []
+            for p in PatternArray:
+                if IsVariable(p):
+                    Opcodes.append(Variables[p])
+                else:
+                    Opcodes.append(p)
+            return Opcodes
+        
+        def GenNextArray(PatternArray, Variables):
+            if len(PatternArray) == 1 and "[*]" in PatternArray[0][0]:
+                OperandsLength = Variables["pack_length"]
+                PatternArray = [(PatternArray[0][0].replace("[*]", str(i)), PatternArray[0][1].replace("[*]", str(i))) for i in range(OperandsLength)]
+
+            RegPairs = []
+            for patternPair in PatternArray:
+                if len(patternPair) != 2:
+                    raise Exception("Next reg pair must have two regs")
+                
+                reg1, reg2 = patternPair
+                if IsVariable(reg1):
+                    reg1Op = Variables[reg1]
+                else:
+                    reg1Op = Operand.Parse(reg1)
+                    
+                if IsVariable(reg2):
+                    reg2Op = Variables[reg2]
+                else:
+                    reg2Op = Operand.Parse(reg2)
+                
+                RegPairs.append((reg1Op, reg2Op))
+                
+            return RegPairs
+
+        def GenOperands(PatternOperands, Variables):
+            if len(PatternOperands) == 1 and "[*]" in PatternOperands[0]:
+                OperandsLength = Variables["pack_length"]
+                PatternOperands = [PatternOperands[0].replace("[*]", str(i)) for i in range(OperandsLength)]
+
+            Array = []
+            for PatternOperand in PatternOperands:
+                p = PatternOperand.split(":")
+                for i in range(len(p)):
+                    if IsVariable(p[i]):
+                        name = Variables[p[i]].Name
+                    else:
+                        name = p[i]
+                    p[i] = name
+                Array.append(Operand.Parse(":".join(p)))
+
+            return Array
+        
+        def HandleRZ(UseOperands, ParentInst, OutInsts):
+            for useOp in UseOperands:
+                if "RZ" in useOp.Name and ":" in useOp.Name:
+                    regs = useOp.Name.split(":")
+
+                    operands = [useOp.Clone(), Operand.Parse(regs[0]), Operand.Parse(regs[1])]
+
+                    pack64Inst = Instruction(
+                        id=f"{ParentInst.id}_pack64_{useOp.Name}",
+                        opcodes=["PACK64"],
+                        operands=operands,
+                        parentBB=ParentInst.parent
+                    )
+                    OutInsts.append(pack64Inst)
+                    print(f"\tPack64 inserted for operand {useOp}")
+
+        # Match pattern
+        opcodesPattern = tuple([inst.opcodes[0] for inst in PatternInsts])
+        if opcodesPattern not in PatternTable:
+            return False, None, None
+        currentPatterns = PatternTable[opcodesPattern]
         
         for pattern in currentPatterns:
             inInstsPattern = pattern["in"]
@@ -596,137 +415,61 @@ class OperAggregate(SaSSTransform):
             
             variables = {"RZ": Operand.Parse("RZ"), "PT": Operand.Parse("PT")}
             matched = True
-
+            
+            if len(inInstsPattern) != len(PatternInsts):
+                continue
 
             for idx, inInstPattern in enumerate(inInstsPattern):
-                inInst = matchInsts[idx]
+                inInst = PatternInsts[idx]
 
                 # Match opcodes
-                inInstOpcodes = inInstPattern["opcodes"]
-                if not MatchArray(inInstOpcodes, inInst.opcodes, variables):
+                pattenInInstOpcodes = inInstPattern["opcodes"]
+                if not MatchOpcodes(pattenInInstOpcodes, inInst.opcodes, variables):
                     matched = False
                     break
 
-                # Match defs and uses
-                inInstDefs = inInstPattern["def"]
-                inInstUses = inInstPattern["use"]
-                if not MatchArray(inInstDefs, inInst.GetDefs(), variables):
+                # Match def operands
+                patternInInstDefs = inInstPattern["def"]
+                if not MatchOperands(patternInInstDefs, inInst.GetDefs(), variables):
                     matched = False
                     break
-                if not MatchArray(inInstUses, inInst.GetUses(), variables):
+                
+                # Match use operands
+                patternInInstUses = inInstPattern["use"]
+                if not MatchOperands(patternInInstUses, inInst.GetUses(), variables):
                     matched = False
                     break
+                
+                # Resolve defined reg pairs 
+                if ResolveDefine:
+                    patternDefined = pattern.get("defined", [])
+                    if not ResolveDefined(patternDefined, variables):
+                        matched = False
+                        break
 
             if not matched:
                 continue
-                
-            if CheckOnly:
-                return True, None, None, None, None
             
-            keepIn1 = inInstsPattern[0].get("keep", False)
-            keepIn2 = inInstsPattern[1].get("keep", False)
 
+            # Skip early if CheckOnly
+            if CheckOnly:
+                return True, None, None
 
+            # Generate output instructions
             outInsts = []
-            for outInstPattern in outInstsPattern:                  
-                # Find regpairs from merged instructions
-                usePatternArray = outInstPattern["use"]
-                if usePatternArray == "pack":
-                    regPairs = {}
-                    for var in variables:
-                        if var.startswith("reg_pack_low_") or var.startswith("reg_pack_high_"):
-                            idx = 0 if "high" in var else 1
-                            regPairs.setdefault(var.split("_")[-1], [None, None])[idx] = var
-                    regPairs = sorted(regPairs.values())
-                    usePatternArray =[f"{v[0]}:{v[1]}" for v in regPairs]
-                usePatternArray = [v for v in usePatternArray if ":" in v]
+            for outInstPattern in outInstsPattern:
                 
-                # Collect what pairs to jump to next via use-def chain
-                regPairs = []
-                for item in usePatternArray:
-                    regs = item.split(":")
-                    # Rn+1:Rn => (Rn, Rn+1)
-                    regOp1 = variables.get(regs[1])
-                    regOp2 = variables.get(regs[0])
-                    
-                    if regOp1 == None and regOp2 == None:
-                        raise Exception("Either one should be not none")
-                    
-                    # If either not known, skip this pair
-                    if not regOp1:
-                        # TODO: generalize this to multiple defs
-                        assert(len(Inst2.ReachingDefsSet.get(regOp2)) == 1) 
-                        defInsts2 = list(Inst2.ReachingDefsSet.get(regOp2))[0][0]
-                        resolveRegPairs = KnownRegPairs.get(defInsts2)
-                        if not resolveRegPairs:
-                            raise Exception("Reg pair not known yet")
-                        
-                        if len(resolveRegPairs) > 1:
-                            raise Exception(f"{regOp2} found multiple pair resolution")
-                        
-                        resolveRegPair = list(resolveRegPairs)[0]
-                        
-                        variables[regs[1]] = resolveRegPair[0]
-                        print(f"\tSkip ({regOp1}, {regOp2}), reg1 resolved to ({resolveRegPair[0]}, {resolveRegPair[1]})")
-                        continue
-                    if not regOp2:
-                        # Not sure if this case is ever needed
-                        raise Exception("Not implemented")
-                        
+                # Add its defining reg pairs to known reg pairs
+                UpdateDefToKnownRegPairs(outInstPattern["def"], variables)
+                
+                regPairs = GenNextArray(pattern.get("next", []), variables)
 
-
-                    # Handle cases such as RZ:reg1
-                    if not regOp1.IsWritableReg xor not regOp2.IsWritableReg:
-                        print(f"\tSkip ({regOp1}, {regOp2}) because pair is not writable")
-                        continue
-                    
-                    # If an input is kept, we do not advance its def-use chain
-                    if not keepIn1:
-                        defInsts1 = Inst1.ReachingDefsSet.get(regOp1)
-                    else:
-                        defInsts1 = set()
-                        defInsts1.add((regOp1.Parent, regOp1))
-
-                    if not keepIn2:
-                        defInsts2 = Inst2.ReachingDefsSet.get(regOp2)
-                    else:
-                        defInsts2 = set()
-                        defInsts2.add((regOp2.Parent, regOp2))
-                        
-                    regPairs.append(((regOp1, defInsts1), (regOp2, defInsts2)))
-                                        
-                # Record def pairs to known reg pairs
-                defPatternArray = outInstPattern["def"]
-                for item in defPatternArray:
-                    if ":" in item:
-                        regs = item.split(":")
-                        # Rn+1:Rn => (Rn, Rn+1)
-                        regOp1 = variables.get(regs[1])
-                        regOp2 = variables.get(regs[0])
-                        
-                        if regOp1 == None or regOp2 == None:
-                            raise Exception("Def operand must have reg pair fully resolved")
-
-                        # Impossible to have RZ:reg1 in def
-                        if not regOp1.IsWritableReg or not regOp2.IsWritableReg:
-                            raise Exception("Def operand must have writtable regs")
-                        
-                        # Add to known reg pairs
-                        # For now, not including one-inst pattern 
-                        # because they cause same reg to be shared by multiple pairs
-                        # We cannot handle that yet
-                        if not isOneInstPattern:
-                            print(f"\tAdd known reg pair: ({regOp1}, {regOp2})")
-                            KnownRegPairs.setdefault(Inst1, set()).add((regOp1.Reg, regOp2.Reg))
-                            KnownRegPairs.setdefault(Inst2, set()).add((regOp1.Reg, regOp2.Reg))
-
-                # Create the output instructions
-                id = f"{Inst1.id}_x64"
-                opcodes = GenArray(outInstPattern["opcodes"], variables)
-                defs = GenArray(outInstPattern["def"], variables, Operand.Parse)
-                uses = GenArray(outInstPattern["use"], variables, Operand.Parse)
+                id = f"{inInst.id}_x64"
+                opcodes = GenOpcodes(outInstPattern["opcodes"], variables)
+                defs = GenOperands(outInstPattern["def"], variables)
+                uses = GenOperands(outInstPattern["use"], variables)
                 operands = defs + uses
-                parent = Inst1.parent
+                parent = inInst.parent
                 
                 outInst = Instruction(
                     id=id,
@@ -734,22 +477,60 @@ class OperAggregate(SaSSTransform):
                     operands=operands,
                     parentBB=parent
                 )
+                
+                # Handle RZ. For example, if an use operand is RZ:R2, 
+                # insert PACK64 RZ:R2=RZ,R2 before outInst 
+                HandleRZ(uses, outInst, outInsts)
+                
                 outInsts.append(outInst)
 
-                return True, outInsts, regPairs, keepIn1, keepIn2
+                return True, outInsts, regPairs
 
-        return False, None, None, None, None
+        return False, None, None
 
-    def GetMatchingPairs(self, RegPairs, KnownRegPairs):
-        Reg1Defs = RegPairs[0][1]
-        Reg2Defs = RegPairs[1][1]
+    def GetMatchingPairs(self, RegPairs):
+        Reg1Op = RegPairs[0]
+        Reg2Op = RegPairs[1]
+        Reg1Insts = Reg1Op.DefiningInsts
+        Reg2Insts = Reg2Op.DefiningInsts
         MatchingPairs = []
-        for r1DefInst, r1DefOp in Reg1Defs:
-            for r2DefInst, r2DefOp in Reg2Defs:
-                if self.ControlEquivalent(r1DefInst, r2DefInst):
-                    Status, _, _, _, _ = self.Match(r1DefInst, r2DefInst, KnownRegPairs, True)
-                    if Status:
-                        MatchingPairs.append(((r1DefInst, r1DefOp), (r2DefInst, r2DefOp)))
+        
+        # Pattern could be all combinations: R1 only, R2 only, R1 and R2
+        if len(Reg1Insts) == 0:
+            MatchR1 = False
+            MatchR2 = True
+            MatchR1AndR2 = False
+        elif len(Reg2Insts) == 0:
+            MatchR2 = False
+            MatchR1 = True
+            MatchR1AndR2 = False
+        elif Reg1Insts == Reg2Insts:
+            MatchR1 = True
+            MatchR2 = False
+            MatchR1AndR2 = False
+        else:
+            MatchR1 = True
+            MatchR2 = True
+            MatchR1AndR2 = True
+        
+        if MatchR1AndR2:
+            for Reg1DefInst in Reg1Insts:
+                for Reg2DefInst in Reg2Insts:
+                    if self.ControlEquivalent(Reg1DefInst, Reg2DefInst):
+                        Status, _, _ = self.Match([Reg1DefInst, Reg2DefInst], CheckOnly=True, ResolveDefine=False)
+                        if Status:
+                            MatchingPairs.append((Reg1DefInst, Reg2DefInst))
+        if MatchR2:
+            for RegDefInst in Reg2Insts:
+                Status, _, _ = self.Match([RegDefInst], CheckOnly=True, ResolveDefine=False)
+                if Status:
+                    MatchingPairs.append((RegDefInst,))
+        if MatchR1:
+            for RegDefInst in Reg1Insts:
+                Status, _, _ = self.Match([RegDefInst], CheckOnly=True, ResolveDefine=False)
+                if Status:
+                    MatchingPairs.append((RegDefInst,))
+        
         return MatchingPairs
     
     def ControlEquivalent(self, Inst1, Inst2):
@@ -765,28 +546,76 @@ class OperAggregate(SaSSTransform):
 
         return CoveredReg1 == Reg1Defs and CoveredReg2 == Reg2Defs
 
-    def CreatePack64(self, InsertBefore, UseOp1, UseOp2):
+    # def CreatePack64(self, InsertBefore, UseOp1, UseOp2):
         
-        Inst = Instruction(
-            id=f"{InsertBefore.id}_pack64_restore",
-            opcodes=["PACK64"],
-            operands=[dest_op, lo_def, hi_def],
-            inst_content=f"PACK64 {dest_op.Name}, {lo_def.Name} {hi_def.Name}",
-            parentBB=InsertBefore.parent
-        )
-        newDefOp = Operand()
-        newDefOp.SetReg(f"pack64_{UseOp1.Name}_{UseOp2.Name}")
-        newDefOp.Type = "U64"
+    #     Inst = Instruction(
+    #         id=f"{InsertBefore.id}_pack64_restore",
+    #         opcodes=["PACK64"],
+    #         operands=[dest_op, lo_def, hi_def],
+    #         inst_content=f"PACK64 {dest_op.Name}, {lo_def.Name} {hi_def.Name}",
+    #         parentBB=InsertBefore.parent
+    #     )
+    #     newDefOp = Operand()
+    #     newDefOp.SetReg(f"pack64_{UseOp1.Name}_{UseOp2.Name}")
+    #     newDefOp.Type = "U64"
         
-        newInst = Instruction()
-        newInst.opcodes = ["PACK64"]
-        newInst.operands = [newDefOp, UseOp1, UseOp2]
+    #     newInst = Instruction()
+    #     newInst.opcodes = ["PACK64"]
+    #     newInst.operands = [newDefOp, UseOp1, UseOp2]
         
-        return newInst
+    #     return newInst
+    
+    def FixRegisterDependencies(self):
+
+        for Pattern in self.ProcessedPatterns:
+            InInsts = Pattern[0]
+            OutInsts = Pattern[1]
+
+            # For pattern that takes more than one input instruction,
+            # go over user instruction of every InInsts to make sure every user is converted
+            AllConverted = True
+            if len(InInsts) > 1:
+                for Inst in InInsts:
+                    for User in Inst.Users.values():
+                        for UserInst, UserOp in User:
+                            if UserInst not in self.HandledInsts:
+                                AllConverted = False
+
+            # Remove pattern instructions
+            for Inst in InInsts:
+                self.RemoveInsts.add(Inst)
+                
+            # Insert output instructions after the last pattern instruction    
+            self.InsertInsts[InInsts[-1]] = OutInsts
+            
+            # If not all users converted, insert UNPACK64
+            if not AllConverted:
+                self.InsertInsts[InInsts[-1]].extend(self.CreateUnpack64(OutInsts))
+            
+    def CreateUnpack64(self, OutInsts):
+        Unpack64Insts = []
+        
+        for OutInst in OutInsts:
+            for DefOp in OutInst.GetDefs():
+                if ":" not in DefOp.Name:
+                    continue
+                
+                regs = DefOp.Name.split(":")
+                operands = [Operand.Parse(regs[0]), Operand.Parse(regs[1]), DefOp.Clone()]
+                
+                unpack64Inst = Instruction(
+                    id=f"{OutInst.id}_unpack64_{operands[0].Name}_{operands[1].Name}",
+                    opcodes=["UNPACK64"],
+                    operands=operands,
+                    parentBB=OutInst.parent
+                )
+                Unpack64Insts.append(unpack64Inst)
+                print(f"\tUnpack64 inserted for operand ({operands[0].Name}, {operands[1].Name}) from {DefOp.Name}")
+
+        return Unpack64Insts
             
 
-    def ApplyChanges(self, func, InsertInsts, RemoveInsts):
-
+    def ApplyChanges(self, func):
         # # Remove Pack64Insts and handle register dependencies
         # for Inst in Pack64Insts:
         #     mergeOp = Inst.GetUses()[0]
@@ -802,12 +631,12 @@ class OperAggregate(SaSSTransform):
 
             for inst in bb.instructions:
 
-                if inst in InsertInsts:
-                    insertInst = InsertInsts[inst]
+                if inst in self.InsertInsts:
+                    insertInst = self.InsertInsts[inst]
                     new_insts.extend(insertInst)
 
                 
-                if inst not in RemoveInsts:
+                if inst not in self.RemoveInsts:
                     new_insts.append(inst)
 
             bb.instructions = new_insts

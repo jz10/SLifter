@@ -1,13 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# TESTS=("vecadd" "loop" "resnet18" "tensor" "hetero_mark_aes" "hetero_mark_fir" "hetero_mark_pr" "spaxy" "spaxy1")
-TESTS=("loop2")
-SM=${SM:-75}
-SUITE="cuobjdump" # this script is for cuobjdump only
+# ============================================================================
+# SLifter Unified Test Runner
+# ============================================================================
+#
+# Supports cuobjdump, nvbit, others, and hecbench suites in a single script.
+# Configure via environment variables:
+#   SM=75 SUITE=cuobjdump TESTS=("loop3") bash run_tests_combined.sh
+#   SM=75 SUITE=hecbench TESTS=("bfs" "b+tree") bash run_tests_combined.sh
+#   TIMEOUT_SECS=5 ... (optional)
+# ============================================================================
 
-# Fixed timeout in seconds for each step (compile/run)
-TIMEOUT_SECS=10
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
+
+SM=${SM:-75}
+SUITE=${SUITE:-"cuobjdump"}
+TIMEOUT_SECS=${TIMEOUT_SECS:-10}
+
+if [ -z "${TESTS+x}" ]; then
+  case "${SUITE}" in
+    cuobjdump) TESTS=("loop3") ;;
+    hecbench) TESTS=("bfs") ;;
+    nvbit) TESTS=("resnet18") ;;
+    others) TESTS=("spaxy") ;;
+    *)
+      echo "error: no default tests for suite '${SUITE}'. Please set TESTS=(...)" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 if ! command -v timeout >/dev/null 2>&1; then
   echo "error: 'timeout' command not found; please install coreutils" >&2
@@ -15,7 +38,8 @@ if ! command -v timeout >/dev/null 2>&1; then
 fi
 
 run_t() {
-  local secs="$1"; shift
+  local secs="$1"
+  shift
   timeout --preserve-status "${secs}s" "$@"
 }
 
@@ -24,41 +48,66 @@ cleanup_link() {
     rm -f "common/kernel_wrapper.h" || true
   fi
 }
-trap cleanup_link EXIT
 
-for TEST in "${TESTS[@]}"; do
-  echo "[cuobjdump] Running test: ${TEST} (sm_${SM})"
+for RAW_TEST in "${TESTS[@]}"; do
+  echo "[${SUITE}] Running test: ${RAW_TEST} (sm_${SM})"
 
-  TEST_DIR="${SUITE}/${TEST}"
+  # Normalise hecbench names (strip optional -cuda suffix)
+  if [ "${SUITE}" = "hecbench" ]; then
+    TEST="${RAW_TEST%-cuda}"
+    while [[ "${TEST}" == *"-cuda" ]]; do
+      TEST="${TEST%-cuda}"
+    done
+    TEST_DIR="${SUITE}/${TEST}-cuda"
+  else
+    TEST="${RAW_TEST}"
+    TEST_DIR="${SUITE}/${TEST}"
+  fi
+
   OUT_BASE="${TEST}_sm${SM}"
+  SASS_FILE="${TEST_DIR}/${OUT_BASE}.sass"
 
-  # Always recompile .cu to SASS for this SM
-  echo "Compiling ${TEST}.cu -> ${OUT_BASE}.sass"
-  run_t "${TIMEOUT_SECS}" nvcc -arch=sm_${SM} -c "./${TEST_DIR}/${TEST}.cu" -o "${TEST_DIR}/${OUT_BASE}.tmp.o"
-  run_t "${TIMEOUT_SECS}" cuobjdump --dump-sass "${TEST_DIR}/${OUT_BASE}.tmp.o" > "${TEST_DIR}/${OUT_BASE}.sass"
+  if [ ! -d "${TEST_DIR}" ]; then
+    echo "error: test directory '${TEST_DIR}' not found" >&2
+    continue
+  fi
 
-  # Symlink correct kernel wrapper
+  if [ ! -f "${SASS_FILE}" ]; then
+    echo "error: expected SASS file '${SASS_FILE}' not found" >&2
+    continue
+  fi
+
+  # Handle kernel wrapper symlink for cuobjdump suite
   LINK_CREATED=0
-  if [ -f "common/kernel_wrapper_${SM}.h" ]; then
+  if [ "${SUITE}" = "cuobjdump" ] && [ -f "common/kernel_wrapper_${SM}.h" ]; then
     rm -f "common/kernel_wrapper.h"
     ln -s "kernel_wrapper_${SM}.h" "common/kernel_wrapper.h"
     LINK_CREATED=1
   fi
 
-  # Generate LLVM IR
-  run_t "${TIMEOUT_SECS}" python ../main.py -i "${TEST_DIR}/${OUT_BASE}.sass" -o "${TEST_DIR}/${OUT_BASE}"
+  trap cleanup_link EXIT
 
-  # Compile and link in the test subfolder
-  run_t "${TIMEOUT_SECS}" clang -O2 -target x86_64 -c "${TEST_DIR}/${OUT_BASE}.ll" -o "${TEST_DIR}/${OUT_BASE}.o"
-  run_t "${TIMEOUT_SECS}" clang++ -std=c++20 -O2 -D__CUDA_ARCH__=${SM}0 "./${TEST_DIR}/host_cpu.cpp" "${TEST_DIR}/${OUT_BASE}.o" -I./common -o "${TEST_DIR}/${OUT_BASE}.out"
+  echo "Generating LLVM IR from ${SASS_FILE}..."
+  run_t "${TIMEOUT_SECS}" python ../main.py -i "${SASS_FILE}" -o "${TEST_DIR}/${OUT_BASE}"
 
-  echo "Executing ${TEST_DIR}/${OUT_BASE}.out..."
-  run_t "${TIMEOUT_SECS}" "./${TEST_DIR}/${OUT_BASE}.out"
+  HOST_CPP="${TEST_DIR}/host_cpu.cpp"
+  if [ -f "${HOST_CPP}" ]; then
+    echo "Compiling and linking host code (${HOST_CPP})..."
+    run_t "${TIMEOUT_SECS}" clang -O2 -target x86_64 -c "${TEST_DIR}/${OUT_BASE}.ll" -o "${TEST_DIR}/${OUT_BASE}.o"
+    run_t "${TIMEOUT_SECS}" clang++ -std=c++20 -O2 -D__CUDA_ARCH__=${SM}0 "./${HOST_CPP}" "${TEST_DIR}/${OUT_BASE}.o" -I./common -o "${TEST_DIR}/${OUT_BASE}.out"
 
-  # Clean up artifacts: remove .ll/.o/.out, temp obj, and legacy unsuffixed sass
-  rm -f "${TEST_DIR}/${OUT_BASE}.ll" "${TEST_DIR}/${OUT_BASE}.o" "${TEST_DIR}/${OUT_BASE}.out" "${TEST_DIR}/${OUT_BASE}.tmp.o" "${TEST_DIR}/${TEST}.sass"
+    echo "Executing ${TEST_DIR}/${OUT_BASE}.out..."
+    run_t "${TIMEOUT_SECS}" "./${TEST_DIR}/${OUT_BASE}.out"
 
-  # Clean up symlink for this test
+    rm -f "${TEST_DIR}/${OUT_BASE}.o" "${TEST_DIR}/${OUT_BASE}.out"
+  else
+    echo "Lifting-only test (no host execution)"
+  fi
+
+  rm -f "${TEST_DIR}/${OUT_BASE}.ll"
+
   cleanup_link
   trap - EXIT
+
+  echo "Test ${RAW_TEST} completed successfully!"
 done

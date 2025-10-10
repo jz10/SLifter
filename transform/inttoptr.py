@@ -15,29 +15,24 @@ class IntToPtr(SaSSTransform):
                     if inst.IsGlobalLoad() or inst.IsGlobalStore():
                         ptr_idx = inst.useOpStartIdx
 
-                        src_op = inst.operands[ptr_idx]
+                        src_op = inst.GetUses()[0].Clone()
 
                         new_reg = src_op.Reg + "_to_ptr"
                         new_regs_count[new_reg] = new_regs_count.get(new_reg, 0) + 1
                         new_reg = f"{new_reg}_{new_regs_count[new_reg]}"
-                        dst_op = Operand(new_reg, new_reg, None, None, True, False, True)
+                        dst_op = Operand.fromReg(new_reg, new_reg)
 
-                        inst_content = f"INTTOPTR {dst_op.Name}, {src_op.Name}"
                         cast_inst = Instruction(
-                            id=f"{inst.id}",
+                            id=f"{inst.id}_inttoptr",
                             opcodes=["INTTOPTR"],
-                            operands=[
-                                dst_op,
-                                Operand(src_op.Name, src_op.Reg, src_op._Suffix,
-                                        src_op._ArgOffset, True, False, False)
-                            ],
-                            inst_content=inst_content,
+                            operands=[dst_op, src_op],
                             parentBB=inst.parent
                         )
                         new_insts.append(cast_inst)
                         count += 1
 
-                        inst.operands[ptr_idx] = dst_op
+                        inst.GetUses()[0].SetReg(new_reg)
+                        
                     new_insts.append(inst)
                 block.instructions = new_insts
 

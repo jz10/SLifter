@@ -116,11 +116,11 @@ class SaSSParserBase:
         PFlag = None
 
         pred_reg = None
-        negate = False
+        not_ = False
         if opcode.startswith('@'):
             opcode = opcode[1:]        
         if opcode.startswith('!'):
-            negate = True
+            not_ = True
             opcode = opcode[1:]
         if opcode.startswith('P') and opcode[1].isdigit():
             pred_reg = opcode
@@ -128,7 +128,7 @@ class SaSSParserBase:
         rest_content = line.replace(items[0], "")
         
         if pred_reg:
-            PFlag = Operand.fromReg(pred_reg, pred_reg, None, negate, False, False)
+            PFlag = Operand.fromReg(pred_reg, pred_reg, None, False, not_, False)
             opcode = items[1]
             rest_content = rest_content.replace(items[1], "")
 
@@ -300,8 +300,7 @@ class SaSSParserBase:
         # Add conditional branch for the predecessor of the predicated instruction
         for i, block in enumerate(Blocks):
             firstInst = block.instructions[0]
-            if firstInst.Predicated():
-                
+            if firstInst.Predicated():                
                 op = firstInst.pflag.Clone()
 
                 if len(block._succs) > 1:
@@ -318,10 +317,12 @@ class SaSSParserBase:
                     id=f"pbra_{firstInst.id}",
                     opcodes=["PBRA"],
                     operands=[op, srcOp1, srcOp2],
-                    inst_content=f"PBRA {firstInst.pflag}",
                     parentBB=None,
                     pflag=None
                 )
+                
+                # Remove predication from the original instruction
+                firstInst._PFlag = None
 
                 for pred in block._preds:
                     if FalseBrBlock not in pred._succs:

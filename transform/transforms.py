@@ -26,10 +26,6 @@ class Transforms:
         self.passes.append(IntToPtr("int to ptr"))
         # Add def-use analysis pass
         self.passes.append(DefUseAnalysis("def-use analysis"))
-        # # Add mov elimination pass
-        # self.passes.append(MovEliminate("mov elimination"))
-        # Add def-use analysis pass
-        self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add operand modifier transform pass
         self.passes.append(OpModTransform("operand modifier"))
         # Add def-use analysis pass
@@ -37,6 +33,8 @@ class Transforms:
         # Add SSA pass
         self.passes.append(SSA("SSA"))
         self.passes.append(RegRemap("reg remap"))
+        # Add def-use analysis pass
+        self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add xmad to mul64 pass
         self.passes.append(XmadToImad("xmad to mul64"))
         # Add FP hack pass
@@ -49,8 +47,14 @@ class Transforms:
         self.passes.append(DCE("dead code elimination"))
         # Add def-use analysis pass again
         self.passes.append(DefUseAnalysis("def-use analysis"))
+        # Add mov elimination pass
+        self.passes.append(MovEliminate("mov elimination"))
+        # Add def-use analysis pass again
+        self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add operator aggregation pass
         self.passes.append(OperAggregate("operator aggregation"))
+        # Add reg remap pass
+        self.passes.append(RegRemap("reg remap"))
         # Add def-use analysis pass again
         self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add dead code elimination pass
@@ -83,7 +87,10 @@ class Transforms:
         for tranpass in self.passes:
             tranpass.apply(module)
 
-            # print instructions
+            # print instructions, don't print for def-use analysis pass
+            if tranpass.name == "def-use analysis":
+                continue
+            
             for func in module.functions:
                 print(f"Function: {func.name}")
                 for block in func.blocks:

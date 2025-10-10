@@ -27,14 +27,6 @@ class Instruction:
 
         self.Users = {}
         self.ReachingDefs = {}
-        
-        
-        # temp solution: add parent field to operand here
-        for op in self._operands:
-            if hasattr(op, 'Parent'):
-                raise Exception("Operand parent already set")
-            op.Parent = self
-
 
         # Def/use operands layout correction
         self._UseOpStartIdx = 1
@@ -103,11 +95,19 @@ class Instruction:
         elif self.IsBranch() or self.IsStore() or self.opcodes[0] == "RED":
             self._UseOpStartIdx = 0
         # instruction with predicate carry out have two def op
-        elif len(self._operands) > 1 and self._operands[0].IsReg:
+        elif len(self._operands) > 1 and self._operands[0].IsReg and self._operands[1].IsPredicateReg:
             i = 1
             while i < len(self._operands) and self._operands[i].IsPredicateReg:
                 i += 1
             self._UseOpStartIdx = i
+        elif self.opcodes[0] == "UNPACK64":
+            self._UseOpStartIdx = 2
+            
+        # temp solution: add parent field to operand here
+        for op in self._operands:
+            # if hasattr(op, 'Parent'):
+            #     raise Exception("Operand parent already set")
+            op.Parent = self
 
         
     @property
@@ -138,6 +138,20 @@ class Instruction:
     @property
     def useOpStartIdx(self):
         return self._UseOpStartIdx
+    
+    def Clone(self):
+        cloned_operands = [op.Clone() for op in self._operands]
+        cloned_pflag = self._PFlag.Clone() if self._PFlag else None
+        cloned_inst = Instruction(
+            id=self._id,
+            opcodes=self._opcodes.copy(),
+            operands=cloned_operands,
+            parentBB=self._Parent,
+            inst_content=self._InstContent,
+            pflag=cloned_pflag
+        )
+        cloned_inst._CtlCode = self._CtlCode
+        return cloned_inst
     
     def ReachingDefsFor(self, str):
         for useOp, defInsts in self.ReachingDefsSet.items():
@@ -397,8 +411,8 @@ class Instruction:
             dest = self.GetDefs()[0]
             zero_val = lifter.ir.Constant(dest.GetIRType(lifter), 0)
             IRRegs[dest.GetIRName(lifter)] = zero_val
-
-        elif opcode == "IMAD" or opcode == "IMAD64":
+            
+        elif opcode == "IMAD":
             dest = self.GetDefs()[0]
             uses = self.GetUses()
             v1 = _get_val(uses[0], "imad_lhs")
@@ -407,6 +421,20 @@ class Instruction:
 
 
             tmp = IRBuilder.mul(v1, v2, "imad_tmp")
+            tmp = IRBuilder.add(tmp, v3, "imad")
+            IRRegs[dest.GetIRName(lifter)] = tmp
+
+        elif opcode == "IMAD64":
+            dest = self.GetDefs()[0]
+            uses = self.GetUses()
+            v1 = _get_val(uses[0], "imad_lhs")
+            v1_64 = IRBuilder.sext(v1, lifter.ir.IntType(64), "imad_lhs_64")
+            v2 = _get_val(uses[1], "imad_rhs")
+            v2_64 = IRBuilder.sext(v2, lifter.ir.IntType(64), "imad_rhs_64")
+            v3 = _get_val(uses[2], "imad_addend")
+
+
+            tmp = IRBuilder.mul(v1_64, v2_64, "imad_tmp")
             tmp = IRBuilder.add(tmp, v3, "imad")
             IRRegs[dest.GetIRName(lifter)] = tmp
             
@@ -437,7 +465,7 @@ class Instruction:
             v2 = _get_val(uses[1], "iscadd_rhs")
             IRRegs[dest.GetIRName(lifter)] = IRBuilder.add(v1, v2, "iscadd")
 
-        elif opcode == "IADD3" or opcode == "UIADD3":
+        elif opcode == "IADD3" or opcode == "UIADD3" or opcode == "IADD364":
             dest = self.GetDefs()[0]
             uses = self.GetUses()
             v1 = _get_val(uses[0], "iadd3_o1")
@@ -467,7 +495,7 @@ class Instruction:
             v2 = _get_val(uses[1], "shl_rhs_64")
             IRRegs[dest.GetIRName(lifter)] = IRBuilder.shl(v1, v2, "shl")
 
-        elif opcode == "SHR":
+        elif opcode == "SHR" or opcode == "SHR64":
             dest = self.GetDefs()[0]
             uses = self.GetUses()
             v1 = _get_val(uses[0], "shr_lhs")
@@ -536,7 +564,7 @@ class Instruction:
                 val = lifter.ir.Constant(lifter.ir.IntType(32), 0)
             IRRegs[dest.GetIRName(lifter)] = val
                 
-        elif opcode == "LDG":
+        elif opcode == "LDG" or opcode == "LDG64":
             dest = self.GetDefs()[0]
             ptr = self.GetUses()[0]
             addr = _get_val(ptr, "ldg_addr")
@@ -886,7 +914,7 @@ class Instruction:
                 
                 IRBuilder.store(IRVal, IRResOp)
 
-        elif opcode == "ISETP":
+        elif opcode == "ISETP" or opcode == "ISETP64":
             uses = self.GetUses()
             # Some encodings include a leading PT predicate use; skip it
             start_idx = 1 if len(uses) > 0 and getattr(uses[0], 'IsPT', False) else 0
@@ -940,6 +968,16 @@ class Instruction:
             hiShift = IRBuilder.shl(hi64, ir.Constant(ir.IntType(64), 32), "pack64_hi_shift")
             packed = IRBuilder.or_(lo64, hiShift, "pack64_result")
             IRRegs[dest.GetIRName(lifter)] = packed
+            
+        elif opcode == "UNPACK64":
+            dests = self.GetDefs()
+            src = self.GetUses()[0]
+            val = _get_val(src)
+            lo32 = IRBuilder.trunc(val, ir.IntType(32), "unpack64_lo")
+            hi32_shift = IRBuilder.lshr(val, ir.Constant(ir.IntType(64), 32), "unpack64_hi_shift")
+            hi32 = IRBuilder.trunc(hi32_shift, ir.IntType(32), "unpack64_hi")
+            IRRegs[dests[0].GetIRName(lifter)] = lo32
+            IRRegs[dests[1].GetIRName(lifter)] = hi32
 
         elif opcode == "CAST64":
             dest = self.GetDefs()[0]

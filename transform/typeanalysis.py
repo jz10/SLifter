@@ -15,6 +15,7 @@ class TypeAnalysis(SaSSTransform):
             "FADD": ["Float32", "Float32", "Float32", "NA", "NA", "NA"],
             "FFMA": ["Float32", "Float32", "Float32", "Float32", "NA", "NA"],
             "FMUL": ["Float32", "Float32", "Float32", "NA", "NA", "NA"],
+            "FSETP": ["Int1", "PROP", "PROP", "PROP", "PROP", "NA"],
             "MUFU": ["Float32", "Float32", "Float32", "NA", "NA", "NA"],
             "S2R": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
             "IMAD": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
@@ -81,9 +82,10 @@ class TypeAnalysis(SaSSTransform):
             "PHI": ["PROP", "PROP", "PROP", "PROP", "NA", "NA"],
             "INTTOPTR": ["PROP_PTR", "Int64", "NA", "NA", "NA", "NA"],
             "PACK64": ["Int64", "Int32", "Int32", "NA", "NA", "NA"],
+            "UNPACK64": ["Int32", "Int64", "NA", "NA", "NA", "NA"],
             "CAST64": ["Int64", "Int32", "NA", "NA", "NA", "NA"],
             "IADD64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
-            "IMAD64": ["Int64", "Int64", "Int64", "Int64", "NA", "NA"],
+            "IMAD64": ["Int64", "Int32", "Int32", "Int64", "NA", "NA"],
             "SHL64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
             "MOV64": ["Int64", "Int64", "NA", "NA", "NA", "NA"],
             "IADD32I64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
@@ -93,6 +95,10 @@ class TypeAnalysis(SaSSTransform):
             "LEA64": ["Int64", "Int64", "Int64", "Int64", "NA", "NA"],
             "SETZERO": ["PROP", "NA", "NA", "NA", "NA", "NA"],
             "ULDC64": ["PROP", "PROP", "NA", "NA", "NA", "NA"],
+            "LDG64": ["Int64", "Int64_PTR", "NA", "NA", "NA", "NA"],
+            "SHR64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
+            "ISETP64": ["Int1", "PROP", "PROP", "PROP", "PROP", "NA"],
+            "IADD364": ["Int64", "Int64", "Int64", "Int64", "NA", "NA"],
         }
 
         self.modifierOverrideTable = {
@@ -226,7 +232,7 @@ class TypeAnalysis(SaSSTransform):
         for BB in WorkList:
             for Inst in BB.instructions:
                 for op in Inst.operands:
-                    if getattr(op, 'IsReg', False) and op.Reg:
+                    if op.IsWritableReg:
                         AllRegs.add(op.Reg)
 
         TypeCount = {}
@@ -304,7 +310,7 @@ class TypeAnalysis(SaSSTransform):
         if TypeDesc == "PTR" and existing and existing.endswith("_PTR"):
             return
 
-        if Operand.IsReg:
+        if Operand.IsWritableReg:
             OpTypes[Operand.Reg] = TypeDesc
         else:
             # Store operand itself as key for non-register values
@@ -375,6 +381,11 @@ class TypeAnalysis(SaSSTransform):
         modRewrite = self.ModifierOverride(Inst, i)
         if modRewrite:
             typeDesc = modRewrite
+            
+        # Default PROP for second def operands
+        # TODO: make the table work with variable def operands instead of just 1
+        if i == 1 and len(Inst.GetDefs()) == 2:
+            typeDesc = "PROP"
 
         # Operand overrides
         if Inst.operands[i].IsPredicateReg or Inst.operands[i].IsPT:
