@@ -1,0 +1,48 @@
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+	code for sm_75
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+	code for sm_75
+		Function : _Z11EmptyKernelv
+	.headerflags	@"EF_CUDA_TEXMODE_UNIFIED EF_CUDA_64BIT_ADDRESS EF_CUDA_SM75 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM75)"
+        /*0000*/                   MOV R1, c[0x0][0x28] ;  /* 0x00000a0000017a02 */
+                                                           /* 0x000fc60000000f00 */
+        /*0010*/                   EXIT ;                  /* 0x000000000000794d */
+                                                           /* 0x000fea0003800000 */
+        /*0020*/                   BRA 0x20;               /* 0xfffffff000007947 */
+                                                           /* 0x000fc0000383ffff */
+        /*0030*/                   NOP;                    /* 0x0000000000007918 */
+                                                           /* 0x000fc00000000000 */
+        /*0040*/                   NOP;                    /* 0x0000000000007918 */
+                                                           /* 0x000fc00000000000 */
+        /*0050*/                   NOP;                    /* 0x0000000000007918 */
+                                                           /* 0x000fc00000000000 */
+        /*0060*/                   NOP;                    /* 0x0000000000007918 */
+                                                           /* 0x000fc00000000000 */
+        /*0070*/                   NOP;                    /* 0x0000000000007918 */
+                                                           /* 0x000fc00000000000 */
+		..........
+
+
+
+Fatbin ptx code:
+================
+arch = sm_75
+code version = [8,5]
+host = linux
+compile_size = 64bit
+compressed
+ptxasOptions = 

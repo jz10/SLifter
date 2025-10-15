@@ -69,7 +69,6 @@ class FPHack(SaSSTransform):
             id=f"{inst2.id}_bitcast_before",
             opcodes=["BITCAST"],
             operands=[dest_op, src_op],
-            inst_content=f"BITCAST {dest_op.Name}, {src_op.Name}",
             parentBB=inst2.parent
         )
         insertInsts[inst2] = bitcastInstBefore
@@ -83,7 +82,6 @@ class FPHack(SaSSTransform):
             id=f"{inst3.id}_bitcast_after",
             opcodes=["BITCAST"],
             operands=[dest_op, src_op],
-            inst_content=f"BITCAST {dest_op.Name}, {src_op.Name}",
             parentBB=inst3.parent
         )
         insertInsts[inst3] = bitcastInstAfter

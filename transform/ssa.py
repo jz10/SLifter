@@ -124,7 +124,7 @@ class SSA(SaSSTransform):
                 new_name = self.generateSSAName(original_reg)
 
                 dest_op.SetReg(new_name)
-                dest_op._IRRegName = None
+                dest_op.IRRegName = None
 
                 self.var_stacks[original_reg].append(new_name)
                 pushed[original_reg].append(new_name)
@@ -142,7 +142,7 @@ class SSA(SaSSTransform):
                 original_reg = self.getOriginalReg(use_op.Reg)
                 current_name = self.getCurrentNameOrVersion0(original_reg)
                 use_op.SetReg(current_name)
-                use_op._IRRegName = None
+                use_op.IRRegName = None
 
             # Rename defs
             for def_op in inst.GetDefs():
@@ -151,7 +151,7 @@ class SSA(SaSSTransform):
                     new_name = self.generateSSAName(original_reg)
 
                     def_op.SetReg(new_name)
-                    def_op._IRRegName = None
+                    def_op.IRRegName = None
 
                     self.var_stacks[original_reg].append(new_name)
                     pushed[original_reg].append(new_name)
@@ -172,7 +172,7 @@ class SSA(SaSSTransform):
                     phi_op = inst.operands[pred_idx + 1]
                     current_name = self.getCurrentNameOrVersion0(original_reg)
                     phi_op.SetReg(current_name)
-                    phi_op._IRRegName = None
+                    phi_op.IRRegName = None
 
     def restoreStacks(self, pushed):
         for var, names in pushed.items():
@@ -224,7 +224,7 @@ class SSA(SaSSTransform):
             ssa_name = self.undefined_ssa[original_reg]
             dest_op = Operand.fromReg(original_reg, original_reg)
             dest_op.SetReg(ssa_name)
-            dest_op._IRRegName = None
+            dest_op.IRRegName = None
 
             inst_id = f"setzero_{ssa_name}"
             if entry_block.addr_content:
@@ -235,7 +235,6 @@ class SSA(SaSSTransform):
                     id=inst_id,
                     opcodes=["SETZERO"],
                     operands=[dest_op],
-                    inst_content=f"SETZERO {ssa_name}",
                     parentBB=entry_block
                 )
             )

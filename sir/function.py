@@ -1,9 +1,3 @@
-from sir.basicblock import BasicBlock
-from sir.instruction import Instruction
-from lift.lifter import Lifter
-from llvmlite import ir
-from transform.sr_substitute import SR_TO_OFFSET
-
 class Function:
     
     #def __init__(self, parser):
@@ -75,52 +69,3 @@ class Function:
             BlockMap[BB] = IRBlock
             
             IsEntry = False
-            
-    # Lift to LLVM IR
-    def Lift(self, lifter, llvm_module, func_name):
-        # Collect arguments
-        Args = self.GetArgs(lifter)
-
-
-        FuncTy = lifter.ir.FunctionType(lifter.ir.VoidType(), [])
-        IRFunc = lifter.ir.Function(llvm_module, FuncTy, self.name)
-
-        # Construct the map based on IR basic block
-        self.BuildBBToIRMap(IRFunc, self.BlockMap)
-
-        # Preload the constant memory values
-        ConstMem = {}
-        EntryBlock = self.BlockMap[self.blocks[0]]
-        Builder = lifter.ir.IRBuilder(EntryBlock)
-        Builder.position_at_start(EntryBlock)
-        
-        OFFSET_TO_SR = {v: k for k, v in SR_TO_OFFSET.items()}
-
-        for entry in Args:
-            addr = Builder.gep(lifter.ConstMem, [ir.Constant(ir.IntType(64), 0), 
-                                                 ir.Constant(ir.IntType(64), entry.ArgOffset)])
-            if entry.ArgOffset in OFFSET_TO_SR:
-                name = OFFSET_TO_SR[entry.ArgOffset]
-            else:
-                name = entry.GetIRName(lifter)
-
-            addr = Builder.bitcast(addr, lifter.ir.PointerType(lifter.GetIRType(entry.TypeDesc)))
-            val = Builder.load(addr, name)
-            ConstMem[entry.GetIRName(lifter)] = val
-
-        # SSA mapping: register names to LLVM IR values
-        IRRegs = {}
-
-        # Lower each basic block
-        for BB in self.blocks:
-            IRBlock = self.BlockMap[BB]
-            Builder = lifter.ir.IRBuilder(IRBlock)
-            BB.Lift(lifter, Builder, IRRegs, self.BlockMap, ConstMem)
-
-        # Second pass to add incoming phi nodes
-        for BB in self.blocks:
-            IRBlock = self.BlockMap[BB]
-            Builder = lifter.ir.IRBuilder(IRBlock)
-            BB.LiftPhiNodes(lifter, Builder, IRRegs, self.BlockMap)
-
-        

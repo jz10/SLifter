@@ -1,0 +1,64 @@
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+	code for sm_75
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+	code for sm_75
+		Function : _Z5triadPKfS0_Pff
+	.headerflags	@"EF_CUDA_TEXMODE_UNIFIED EF_CUDA_64BIT_ADDRESS EF_CUDA_SM75 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM75)"
+        /*0000*/                   MOV R1, c[0x0][0x28] ;                 /* 0x00000a0000017a02 */
+                                                                          /* 0x000fe40000000f00 */
+        /*0010*/                   S2R R6, SR_TID.X ;                     /* 0x0000000000067919 */
+                                                                          /* 0x000e220000002100 */
+        /*0020*/                   MOV R7, 0x4 ;                          /* 0x0000000400077802 */
+                                                                          /* 0x000fc60000000f00 */
+        /*0030*/                   S2R R3, SR_CTAID.X ;                   /* 0x0000000000037919 */
+                                                                          /* 0x000e240000002500 */
+        /*0040*/                   IMAD R6, R3, c[0x0][0x0], R6 ;         /* 0x0000000003067a24 */
+                                                                          /* 0x001fc800078e0206 */
+        /*0050*/                   IMAD.WIDE R2, R6, R7, c[0x0][0x160] ;  /* 0x0000580006027625 */
+                                                                          /* 0x000fc800078e0207 */
+        /*0060*/                   IMAD.WIDE R4, R6, R7, c[0x0][0x168] ;  /* 0x00005a0006047625 */
+                                                                          /* 0x000fc800078e0207 */
+        /*0070*/                   LDG.E.CONSTANT.SYS R2, [R2] ;          /* 0x0000000002027381 */
+                                                                          /* 0x000ea800001e6900 */
+        /*0080*/                   LDG.E.CONSTANT.SYS R5, [R4] ;          /* 0x0000000004057381 */
+                                                                          /* 0x000ea200001e6900 */
+        /*0090*/                   IMAD.WIDE R6, R6, R7, c[0x0][0x170] ;  /* 0x00005c0006067625 */
+                                                                          /* 0x000fc800078e0207 */
+        /*00a0*/                   FFMA R9, R5, c[0x0][0x178], R2 ;       /* 0x00005e0005097a23 */
+                                                                          /* 0x004fd00000000002 */
+        /*00b0*/                   STG.E.SYS [R6], R9 ;                   /* 0x0000000906007386 */
+                                                                          /* 0x000fe2000010e900 */
+        /*00c0*/                   EXIT ;                                 /* 0x000000000000794d */
+                                                                          /* 0x000fea0003800000 */
+        /*00d0*/                   BRA 0xd0;                              /* 0xfffffff000007947 */
+                                                                          /* 0x000fc0000383ffff */
+        /*00e0*/                   NOP;                                   /* 0x0000000000007918 */
+                                                                          /* 0x000fc00000000000 */
+        /*00f0*/                   NOP;                                   /* 0x0000000000007918 */
+                                                                          /* 0x000fc00000000000 */
+		..........
+
+
+
+Fatbin ptx code:
+================
+arch = sm_75
+code version = [8,5]
+host = linux
+compile_size = 64bit
+compressed
+ptxasOptions = 

@@ -36,7 +36,7 @@ class XmadToImad(SaSSTransform):
                 continue
             
             # Match XMAD.PSL.CBCC (third instruction)
-            if len(instr.opcodes) == 3 and instr.opcodes[1] == "PSL" and instr.opcodes[2] == "CBCC" and instr.operands[1]._Suffix == "H1":
+            if len(instr.opcodes) == 3 and instr.opcodes[1] == "PSL" and instr.opcodes[2] == "CBCC" and instr.operands[1].Suffix == "H1":
                 def_reg = instr.operands[0].Reg
                 A_base_third = instr.operands[1].Reg
                 T_reg = instr.operands[2].Reg  # From first XMAD.MRG
@@ -56,7 +56,7 @@ class XmadToImad(SaSSTransform):
                         patterns[def_reg] = (i1, instr.id, i3)
             
             # Match XMAD.MRG (first instruction)
-            elif len(instr.opcodes) == 2 and instr.opcodes[1] == "MRG" and  instr.operands[2]._Suffix == "H1":
+            elif len(instr.opcodes) == 2 and instr.opcodes[1] == "MRG" and  instr.operands[2].Suffix == "H1":
                 if instr.operands[0].Reg in candidates1:
                     A_base, T_reg, def_reg = candidates1[instr.operands[0].Reg]
                     if (instr.operands[1].Reg == A_base):
@@ -97,13 +97,10 @@ class XmadToImad(SaSSTransform):
                     imad_addend
                 ]
                 
-                imad_inst_content = f"IMAD {def_reg}, {multiplicand1.Name}, {multiplicand2.Name}, {imad_addend.Name}"
-                
                 imad_instr = Instruction(
                     id=f"imad_{def_reg}",
                     opcodes=["IMAD"],
                     operands=imad_operands,
-                    inst_content=imad_inst_content,
                     parentBB=instr1.parent
                 )
                 
@@ -150,19 +147,19 @@ class XmadToImad(SaSSTransform):
                     i1, i2, i3, i4, i5 = patterns[def_reg]
                     patterns[def_reg] = (i1, i2, i3, instr.id, i5)
 
-            elif len(instr.opcodes) == 1 and instr.opcodes[0] == "XMAD" and instr.operands[1]._Suffix == "H1" and instr.operands[2]._Suffix == "H1":
+            elif len(instr.opcodes) == 1 and instr.opcodes[0] == "XMAD" and instr.operands[1].Suffix == "H1" and instr.operands[2].Suffix == "H1":
                 if instr.operands[0].Reg in candidates3:
                     def_reg = candidates3[instr.operands[0].Reg]
                     i1, i2, i3, i4, i5 = patterns[def_reg]
                     patterns[def_reg] = (i1, i2, instr.id, i4, i5)
             
-            elif len(instr.opcodes) == 1 and instr.opcodes[0] == "XMAD" and instr.operands[1]._Suffix != "H1" and instr.operands[2]._Suffix == "H1":
+            elif len(instr.opcodes) == 1 and instr.opcodes[0] == "XMAD" and instr.operands[1].Suffix != "H1" and instr.operands[2].Suffix == "H1":
                 if instr.operands[0].Reg in candidates2:
                     def_reg = candidates2[instr.operands[0].Reg]
                     i1, i2, i3, i4, i5 = patterns[def_reg]
                     patterns[def_reg] = (i1, instr.id, i3, i4, i5)
 
-            elif len(instr.opcodes) == 1 and instr.opcodes[0] == "XMAD" and instr.operands[1]._Suffix != "H1" and instr.operands[2]._Suffix != "H1":
+            elif len(instr.opcodes) == 1 and instr.opcodes[0] == "XMAD" and instr.operands[1].Suffix != "H1" and instr.operands[2].Suffix != "H1":
                 if instr.operands[0].Reg in candidates1:
                     def_reg = candidates1[instr.operands[0].Reg]
                     i1, i2, i3, i4, i5 = patterns[def_reg]
@@ -198,13 +195,10 @@ class XmadToImad(SaSSTransform):
                     Operand("RZ", "RZ", None, None, True, False, False)
                 ]
                 
-                imad_inst_content = f"IMAD {def_reg}, {multiplicand1.Name}, {multiplicand2.Name}, RZ"
-                
                 imad_instr = Instruction(
                     id=f"imad_{def_reg}",
                     opcodes=["IMAD"],
                     operands=imad_operands,
-                    inst_content=imad_inst_content,
                     parentBB=instr1.parent
                 )
                 

@@ -1,4 +1,3 @@
-from lift.lifter import Lifter
 import ctypes
 
 # Special register constants
@@ -95,9 +94,15 @@ class Operand:
             content = Reg.replace("c[0x0][", "").replace("]", "")
             # c[0x0][0x164]:c[0x0][0x160] => use 0x160 as offset
             content = content.split(":")[-1] 
+            
+            # c[0x0][R0+0x160]
+            regName = None
+            if '+' in content:
+                regName, content = content.split('+')
+                
             offset = int(content, base = 16)
 
-            return Operand.fromArg(Operand_Content, offset, Negate, Not, Abs)
+            return Operand.fromArg(Operand_Content, offset, Negate, Not, Abs, regName)
 
         # Suffix
         Suffix = None
@@ -113,8 +118,8 @@ class Operand:
         return cls(Name=name, Reg=None, Suffix=None, ArgOffset=None, IsReg=False, IsArg=False, IsMemAddr=False, IsImmediate=True, ImmediateValue=value)
 
     @classmethod
-    def fromArg(cls, name, arg_offset, negate, not_, abs):
-        return cls(Name=name, Reg=None, Suffix=None, ArgOffset=arg_offset, IsReg=False, IsArg=True, IsMemAddr=False, Negate=negate, Not=not_, Abs=abs)
+    def fromArg(cls, name, arg_offset, negate, not_, abs, regName=None):
+        return cls(Name=name, Reg=regName, Suffix=None, ArgOffset=arg_offset, IsReg=False, IsArg=True, IsMemAddr=False, Negate=negate, Not=not_, Abs=abs)
 
     @classmethod
     def fromMemAddr(cls, name, reg, suffix, offset = 0, uregOffset = None):
@@ -125,46 +130,37 @@ class Operand:
         return cls(Name=name, Reg=reg, Suffix=suffix, ArgOffset=None, IsReg=True, IsArg=False, IsMemAddr=False, IsImmediate=False, ImmediateValue=None, Negate=negate, Not=not_, Abs=abs)
 
     def __init__(self, Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate=False, ImmediateValue=None, Negate=False, Not=False, Abs=False, URegOffset=None):
-        self._Name = Name
-        self._Reg = Reg
-        self._Suffix = Suffix
-        self._ArgOffset = ArgOffset if IsArg else None
-        self._IsReg = IsReg
-        self._IsArg = IsArg
-        self._IsMemAddr = IsMemAddr
-        self._IsImmediate = IsImmediate
-        self._ImmediateValue = ImmediateValue
-        self._MemAddrOffset = ArgOffset if IsMemAddr else None
-        self._URegOffset = URegOffset
-        self._Skipped = False
-        self._NegativeReg = Negate
-        self._NotReg = Not
-        self._AbsReg = Abs
-        self._TypeDesc = "NOTYPE"
-        self._IRType = None
-        self._IRRegName = None
-        self._IsFloat = "0x" not in Name if IsImmediate else False
+        self.Name = Name
+        self.Reg = Reg
+        self.Suffix = Suffix
+        self.ArgOffset = ArgOffset if IsArg else None
+        self.IsReg = IsReg
+        self.IsArg = IsArg
+        self.IsMemAddr = IsMemAddr
+        self.IsImmediate = IsImmediate
+        self.ImmediateValue = ImmediateValue
+        self.MemAddrOffset = ArgOffset if IsMemAddr else None
+        self.URegOffset = URegOffset
+        self.Skipped = False
+        self.IsNegativeReg = Negate
+        self.IsNotReg = Not
+        self.IsAbsReg = Abs
+        self.TypeDesc = "NOTYPE"
+        self.IRType = None
+        self.IRRegName = None
+        self.IsFloatImmediate = "0x" not in Name if IsImmediate else False
         self.DefiningInsts = set()
 
     @property
-    def Name(self):
-        return self._Name
-    
-    @property
-    def Reg(self):
-        return self._Reg
-
-    @property
-    def IsReg(self):
-        return self._IsReg
-    
-    @property
     def IsConstMem(self):
-        return self._ArgOffset is not None
+        return self.ArgOffset is not None
 
     @property
     def IsPredicateReg(self):
         if not self.IsReg:
+            return False
+        
+        if "P" not in self.Reg:
             return False
         
         reg = self.Reg
@@ -189,69 +185,37 @@ class Operand:
         return True
     
     @property
-    def IsFloatImmediate(self):
-        return self._IsFloat
-    
-    @property
-    def IsArg(self):
-        return self._IsArg
-    
-    @property
-    def IsMemAddr(self):
-        return self._IsMemAddr
-
-    @property
-    def IsImmediate(self):
-        return self._IsImmediate
-
-    @property
-    def ImmediateValue(self):
-        return self._ImmediateValue
-    
-    @property
     def IsBarrierReg(self):
         return self.Reg and self.Reg[0] == 'B'
 
     @property
     def IsSpecialReg(self):
-        return self._Name and (self._Name.startswith(SR_TID) or 
-                              self._Name.startswith(SR_NTID) or 
-                              self._Name.startswith(SR_CTAID) or 
-                              self._Name.startswith(SR_LANE) or 
-                              self._Name.startswith(SR_WARP) or 
-                              self._Name.startswith(SR_CLOCK))
-    
-    @property
-    def IsNegativeReg(self):
-        return self._NegativeReg
-    
-    @property
-    def IsNotReg(self):
-        return self._NotReg
-
-    @property
-    def IsAbsReg(self):
-        return self._AbsReg
+        return self.Name and (self.Name.startswith(SR_TID) or 
+                              self.Name.startswith(SR_NTID) or 
+                              self.Name.startswith(SR_CTAID) or 
+                              self.Name.startswith(SR_LANE) or 
+                              self.Name.startswith(SR_WARP) or 
+                              self.Name.startswith(SR_CLOCK))
 
     @property
     def IsThreadIdx(self):
-        return self._Name and self._Name.startswith(SR_TID)
+        return self.Name and self.Name.startswith(SR_TID)
     
     @property
     def IsBlockDim(self):
-        return self._Name and self._Name.startswith(SR_NTID)
+        return self.Name and self.Name.startswith(SR_NTID)
     
     @property
     def IsBlockIdx(self):
-        return self._Name and self._Name.startswith(SR_CTAID)
+        return self.Name and self.Name.startswith(SR_CTAID)
     
     @property
     def IsLaneId(self):
-        return self._Name and self._Name.startswith(SR_LANE)
+        return self.Name and self.Name.startswith(SR_LANE)
     
     @property
     def IsWarpId(self):
-        return self._Name and self._Name.startswith(SR_WARP)
+        return self.Name and self.Name.startswith(SR_WARP)
 
     @property
     def IsRZ(self):
@@ -261,58 +225,46 @@ class Operand:
     def IsPT(self):
         return self.Reg in ["PT", "UPT"]
     
-    @property
-    def ArgOffset(self):
-        return self._ArgOffset
-
-    @property
-    def TypeDesc(self):
-        return self._TypeDesc
-
-    @property
-    def Skipped(self):
-        return self._Skipped
-    
     def __str__(self):
         if self.IsMemAddr:
-            reg_text = self._Reg
-            if self._Suffix:
-                reg_text = f"{self._Reg}.{self._Suffix}"
-            if self._URegOffset:
-                reg_text = f"{reg_text}+{self._URegOffset}"
-            if self._MemAddrOffset:
-                return f"[{reg_text}+0x{self._MemAddrOffset:x}]"
+            reg_text = self.Reg
+            if self.Suffix:
+                reg_text = f"{self.Reg}.{self.Suffix}"
+            if self.URegOffset:
+                reg_text = f"{reg_text}+{self.URegOffset}"
+            if self.MemAddrOffset:
+                return f"[{reg_text}+0x{self.MemAddrOffset:x}]"
             else:
                 return f"[{reg_text}]"
-        elif (self.IsPredicateReg or self.IsPT) and self._NotReg:
-            return f"!{self._Reg}"
+        elif (self.IsPredicateReg or self.IsPT) and self.IsNotReg:
+            return f"!{self.Reg}"
         elif self.IsReg:
-            if self._NotReg:
+            if self.IsNotReg:
                 if self.IsPredicateReg:
-                    s = f"!{self._Reg}"
+                    s = f"!{self.Reg}"
                 else:
-                    s = f"~{self._Reg}"
-            elif self._NegativeReg:
-                s =  f"-{self._Reg}"
-            elif self._AbsReg:
-                s =  f"|{self._Reg}|"
+                    s = f"~{self.Reg}"
+            elif self.IsNegativeReg:
+                s =  f"-{self.Reg}"
+            elif self.IsAbsReg:
+                s =  f"|{self.Reg}|"
             else:
-                s = self._Reg
+                s = self.Reg
 
-            if self._Suffix:
-                return f"{s}.{self._Suffix}"
+            if self.Suffix:
+                return f"{s}.{self.Suffix}"
             else:
                 return s
         elif self.IsArg:
-            return f"c[0x0][0x{self._ArgOffset:x}]"
+            return f"c[0x0][0x{self.ArgOffset:x}]"
         elif self.IsSpecialReg:
-            return self._Name
+            return self.Name
         elif self.IsImmediate:
             if self.IsFloatImmediate:
-                return str(self._ImmediateValue)
-            return hex(self._ImmediateValue)
+                return str(self.ImmediateValue)
+            return hex(self.ImmediateValue)
         else:
-            return self._Name if self._Name else "<??>"
+            return self.Name if self.Name else "<??>"
         
     def __repr__(self):
         return self.__str__()
@@ -320,74 +272,77 @@ class Operand:
     def SetReg(self, RegName):
         if not self.IsReg:
             raise InvalidOperandException("Cannot set register for non-register operand")
-        self._Reg = RegName
-        self._Name = RegName
+        self.Reg = RegName
+        self.Name = RegName
 
     def Replace(self, other):
-        self._Name = other._Name
-        self._Reg = other._Reg
-        self._Suffix = other._Suffix
-        self._ArgOffset = other._ArgOffset
-        self._IsReg = other._IsReg
-        self._IsArg = other._IsArg
-        self._IsMemAddr = other._IsMemAddr
-        self._IsImmediate = other._IsImmediate
-        self._ImmediateValue = other._ImmediateValue
-        self._NegativeReg = other._NegativeReg
-        self._NotReg = other._NotReg
-        self._AbsReg = other._AbsReg
-        self._Skipped = other._Skipped
-        self._TypeDesc = other._TypeDesc
-        self._IRType = other._IRType
-        self._IRRegName = other._IRRegName
+        self.Name = other.Name
+        self.Reg = other.Reg
+        self.Suffix = other.Suffix
+        self.ArgOffset = other.ArgOffset
+        self.IsReg = other.IsReg
+        self.IsArg = other.IsArg
+        self.IsMemAddr = other.IsMemAddr
+        self.IsImmediate = other.IsImmediate
+        self.ImmediateValue = other.ImmediateValue
+        self.MemAddrOffset = other.MemAddrOffset
+        self.URegOffset = other.URegOffset
+        self.IsNegativeReg = other.IsNegativeReg
+        self.IsNotReg = other.IsNotReg
+        self.IsAbsReg = other.IsAbsReg
+        self.IsFloatImmediate = other.IsFloatImmediate
+        self.Skipped = other.Skipped
+        self.TypeDesc = other.TypeDesc
+        self.IRType = other.IRType
+        self.IRRegName = other.IRRegName
         # Parent don't change 
         # self._Parent = other._Parent
 
     # Set the type description for operand
     def SetTypeDesc(self, Ty):
-        self._TypeDesc = Ty
+        self.TypeDesc = Ty
 
     # Set the skip flag
     def SetSkip(self):
-        self._Skipped = True
+        self.Skipped = True
         
     # Get the type description
     def GetTypeDesc(self):
-        return self._TypeDesc
+        return self.TypeDesc
 
     def HasTypeDesc(self):
-        return self._TypeDesc != "NOTYPE"
+        return self.TypeDesc != "NOTYPE"
 
     def GetIRType(self, lifter):
-        if self._IRType == None:
-            self._IRType = lifter.GetIRType(self._TypeDesc)
+        if self.IRType == None:
+            self.IRType = lifter.GetIRType(self.TypeDesc)
 
-        return self._IRType
+        return self.IRType
 
     def GetIRName(self, lifter):
         if self.IsReg:
-            return self._Reg + self._TypeDesc
+            return self.Reg + self.TypeDesc
         elif self.IsArg:
-            return f"c[0x0][0x{self._ArgOffset:x}]" + self._TypeDesc
+            return f"c[0x0][0x{self.ArgOffset:x}]" + self.TypeDesc
 
         return None
     
     def dump(self):
-        print("operand: ", self._Name, self._Reg)
+        print("operand: ", self.Name, self.Reg)
     
     def Clone(self):
         return Operand(
-            Name=self._Name,
-            Reg=self._Reg,
-            Suffix=self._Suffix,
-            ArgOffset=self._ArgOffset,
-            IsReg=self._IsReg,
-            IsArg=self._IsArg,
-            IsMemAddr=self._IsMemAddr,
-            IsImmediate=self._IsImmediate,
-            ImmediateValue=self._ImmediateValue,
-            Negate=self._NegativeReg,
-            Not=self._NotReg,
-            Abs=self._AbsReg,
-            URegOffset=self._URegOffset
+            Name=self.Name,
+            Reg=self.Reg,
+            Suffix=self.Suffix,
+            ArgOffset=self.ArgOffset if self.IsArg else self.MemAddrOffset,
+            IsReg=self.IsReg,
+            IsArg=self.IsArg,
+            IsMemAddr=self.IsMemAddr,
+            IsImmediate=self.IsImmediate,
+            ImmediateValue=self.ImmediateValue,
+            Negate=self.IsNegativeReg,
+            Not=self.IsNotReg,
+            Abs=self.IsAbsReg,
+            URegOffset=self.URegOffset
         )

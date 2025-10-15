@@ -41,7 +41,7 @@ def main():
     file_name = args.output_module + '.ll'
     with open(file_name, 'w') as output_file:
       # Lift to LLVM IR
-      m.Lift(lifter, output_file)
+      lifter.LiftModule(m, output_file)
     
 if __name__ == '__main__':
   main()

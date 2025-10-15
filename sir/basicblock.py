@@ -1,5 +1,3 @@
-from sir.instruction import Instruction
-
 class BasicBlock:
     def __init__(self, addr_content, pflag, instructions=[]):
         # The address of the start of this basic block
@@ -123,43 +121,6 @@ class BasicBlock:
             return None
 
         return BB1, BB2
-
-    def Lift(self, lifter, IRBuilder, IRRegs, BlockMap, ConstMem):
-        for inst in self.instructions:
-            inst.Lift(lifter, IRBuilder, IRRegs, ConstMem, BlockMap)
-
-    def LiftPhiNodes(self, lifter, IRBuilder, IRRegs, BlockMap):
-        IRBlock = BlockMap[self]
-
-        def roughSearch(op):
-            reg = op.Reg
-            name = op.GetIRName(lifter)
-            targetType = name.replace(reg, "")
-
-            bestKey = max(IRRegs.keys(), key=lambda k: (k.startswith(reg), len(k)))
-
-            val = IRBuilder.bitcast(IRRegs[bestKey], op.GetIRType(lifter), f"{name}_cast")
-
-            return val
-
-        for i, inst in enumerate(self.instructions):
-            if inst.opcodes[0] == "PHI" or inst.opcodes[0] == "PHI64":
-                IRInst = IRBlock.instructions[i]
-
-                # Incoming operands correspond to predecessors in order
-                for i, op in enumerate(inst._operands[1:]):
-                    pred_bb = self._preds[i]
-                    if op.IsRZ:
-                        val = lifter.ir.Constant(op.GetIRType(lifter), 0)
-                    elif op.IsPT:
-                        val = lifter.ir.Constant(op.GetIRType(lifter), 1)
-                    else:
-                        irName = op.GetIRName(lifter)
-                        if irName not in IRRegs:
-                            val = roughSearch(op)
-                        else:
-                            val = IRRegs[irName]
-                    IRInst.add_incoming(val, BlockMap[pred_bb])
 
     def dump(self):
         print("BB Addr: ", self.addr_content)

@@ -40,6 +40,15 @@ def run(cmd, cwd):
     return r.stdout
 
 
+def ensure_arch_header(sass: str, sm: str) -> str:
+    """Ensure the SASS dump contains an 'arch =' header for parser compatibility."""
+    if "arch = sm_" in sass:
+        return sass
+    header = f"arch = sm_{sm}\n"
+    # Keep existing leading newlines minimal
+    return header + sass.lstrip("\n")
+
+
  
 
 
@@ -137,8 +146,17 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, str]]], base: str, sm
         test_dir = TEST_DIR / suite_name / testname
     
     desired_sass_path = test_dir / f"{testname}_sm{sm}.sass"
+    recorded_sass_path = TEST_DIR / sass_rel if sass_rel else None
+    force_rebuild = suite_name == "cuobjdump"
+    sass_path = None
 
-    if not sass_rel or not (TEST_DIR / sass_rel).exists():
+    if not force_rebuild:
+        if desired_sass_path.exists():
+            sass_path = desired_sass_path
+        elif recorded_sass_path and recorded_sass_path.exists():
+            sass_path = recorded_sass_path
+
+    if not sass_path:
         # Handle HeCBench main.cu naming
         if suite_name == "hecbench":
             cu_path = test_dir / "main.cu"
@@ -148,13 +166,14 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, str]]], base: str, sm
             cu_path = test_dir / f"{testname}.cu"
         legacy = test_dir / f"{testname}.sass"
         # Try rename legacy first
-        if legacy.exists():
+        if legacy.exists() and not force_rebuild:
             try:
                 legacy.rename(desired_sass_path)
             except Exception:
                 legacy.unlink(missing_ok=True)
         # If still absent, try compiling from .cu (handle multi-file projects)
-        if not desired_sass_path.exists() and cu_path.exists():
+        should_compile = cu_path.exists() and (force_rebuild or not desired_sass_path.exists())
+        if should_compile:
             tmp_exe = test_dir / f"{testname}_sm{sm}.tmp.out"
             try:
                 # For HeCBench, use Makefile if available (much more robust!)
@@ -176,7 +195,7 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, str]]], base: str, sm
                         if possible_exes:
                             built_exe = possible_exes[0]  # Take the first match
                             sass_out = run(["cuobjdump", "--dump-sass", str(built_exe)], cwd=TEST_DIR)
-                            desired_sass_path.write_text(sass_out)
+                            desired_sass_path.write_text(ensure_arch_header(sass_out, sm))
                             
                             # Clean up the built executable
                             try:
@@ -204,18 +223,19 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, str]]], base: str, sm
                         compile_cmd.extend(["-o", str(tmp_exe)])
                         run(compile_cmd, cwd=TEST_DIR)
                         sass_out = run(["cuobjdump", "--dump-sass", str(tmp_exe)], cwd=TEST_DIR)
-                        desired_sass_path.write_text(sass_out)
+                        desired_sass_path.write_text(ensure_arch_header(sass_out, sm))
                 else:
                     # Non-HeCBench: single file compilation
                     run([
                         "nvcc",
                         f"-arch=sm_{sm}",
+                        "-cubin",
                         f"./{cu_path.relative_to(TEST_DIR)}",
                         "-o",
                         str(tmp_exe),
                     ], cwd=TEST_DIR)
                     sass_out = run(["cuobjdump", "--dump-sass", str(tmp_exe)], cwd=TEST_DIR)
-                    desired_sass_path.write_text(sass_out)
+                    desired_sass_path.write_text(ensure_arch_header(sass_out, sm))
             except AssertionError:
                 if pytest:
                     pytest.skip(f"Cannot build SASS for {base} sm{sm}")
@@ -225,17 +245,17 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, str]]], base: str, sm
                 tmp_exe.unlink(missing_ok=True)
 
         if desired_sass_path.exists():
-            sass_rel = str(desired_sass_path.relative_to(TEST_DIR))
+            sass_path = desired_sass_path
         else:
             if pytest:
                 pytest.skip(f"No SASS or CU for {base} sm{sm}")
             else:
                 return
 
-    # If this is a HeCBench test, compilation to SASS is sufficient for now
-    if suite_name == "hecbench":
-        # If we got here, desired_sass_path exists; consider this test passed
-        return
+    if sass_path:
+        sass_rel = str(sass_path.relative_to(TEST_DIR))
+        entry["sass_rel"] = sass_rel
+
 
     # Extract testname from base for output naming
     testname = base.split('/')[-1]

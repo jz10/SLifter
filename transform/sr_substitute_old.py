@@ -50,7 +50,6 @@ def process(instructions):
                         id=f"s2r_{hex(offset)}",
                         opcodes=["S2R"],
                         operands=[temp_operand, sr_operand],
-                        inst_content=f"S2R {temp_reg_name}, {sr_name}",
                         parentBB=inst.parent
                     )
                     
@@ -63,7 +62,7 @@ def process(instructions):
                 offset = operand.ArgOffset
                 temp_reg_name = offset_to_temp_reg[offset]
                 
-                new_operand = Operand(temp_reg_name, temp_reg_name, operand._Suffix, -1, True, False, operand.IsMemAddr)
+                new_operand = Operand(temp_reg_name, temp_reg_name, operand.Suffix, -1, True, False, operand.IsMemAddr)
                 new_operand.SetTypeDesc(operand.GetTypeDesc())
                 inst._operands[i] = new_operand
         

@@ -76,7 +76,6 @@ class SetZero(SaSSTransform):
             id=f"{original_inst.id}_setzero",
             opcodes=["SETZERO"],
             operands=[new_dest],
-            inst_content=f"SETZERO {new_dest.Name}",
             parentBB=original_inst.parent
         )
         

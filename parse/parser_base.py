@@ -156,7 +156,12 @@ class SaSSParserBase:
             Operands.append(Operand.Parse(Operand_Content))
 
         # Create instruction
-        return Instruction(InstID, Opcodes, Operands, Opcode_Content + " " + Operands_Detail, None, PFlag)
+        inst = Instruction(InstID, Opcodes, Operands, None, PFlag)
+        raw_content = Opcode_Content
+        if Operands_Detail:
+            raw_content = f"{Opcode_Content} {Operands_Detail}"
+        inst._InstContent = raw_content
+        return inst
 
     # Parse the argument offset
     def GetArgOffset(self, offset):
@@ -184,8 +189,8 @@ class SaSSParserBase:
         for inst in Insts:
             if inst.IsBranch():
                 target_addr = _align_up_to_inst(inst.operands[-1].Name.zfill(4))
-                inst.operands[0]._Name = format(target_addr, '04x')
-                inst.operands[0]._ImmediateValue = target_addr
+                inst.operands[0].Name = format(target_addr, '04x')
+                inst.operands[0].ImmediateValue = target_addr
 
         # Identify leaders
         leaders = set()
@@ -221,14 +226,15 @@ class SaSSParserBase:
                     PredicatedBlock = False
                     if BlockInsts[0].id in predicated_leaders:
                         PredicatedBlock = True
-                        BlockInsts.insert(0, Instruction(
+                        pbra_inst = Instruction(
                             id=f"{int(BlockInsts[0].id, 16):04X}",
                             opcodes=["PBRA"],
                             operands=[BlockInsts[0].pflag.Clone()],
-                            inst_content=f"PBRA {BlockInsts[0].pflag.Name}",
                             parentBB=None,
                             pflag=None
-                        ))
+                        )
+                        pbra_inst._InstContent = f"PBRA {BlockInsts[0].pflag.Name}"
+                        BlockInsts.insert(0, pbra_inst)
                         BlockInsts[1]._id = f"{int(BlockInsts[0].id, 16)+1:04X}"
                         for PredInst in BlockInsts:
                             PredInst._PFlag = None

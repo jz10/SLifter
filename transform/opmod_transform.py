@@ -21,7 +21,7 @@ class OpModTransform(SaSSTransform):
                         if not op.IsMemAddr:
                             continue
                         
-                        if not op._Suffix:
+                        if not op.Suffix:
                             continue
 
                         # Create SHL tmp, base, 0x2
@@ -43,7 +43,6 @@ class OpModTransform(SaSSTransform):
                             id=f"{inst.id}_x4",
                             opcodes=["SHL"],
                             operands=[dst_op, src_op, imm_op],
-                            inst_content=f"SHL {dst_name}, {base_reg}, 0x2",
                             parentBB=inst.parent
                         )
 
@@ -54,7 +53,7 @@ class OpModTransform(SaSSTransform):
 
                         # Rewrite memory operand to use the new register (and drop suffix)
                         op.SetReg(dst_name)
-                        op._Suffix = None
+                        op.Suffix = None
 
                     new_insts.append(inst)
 

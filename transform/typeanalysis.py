@@ -51,6 +51,7 @@ class TypeAnalysis(SaSSTransform):
             "BAR": [[], []],
             "SSY": [[], []],
             "SHF": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "SHFL": [["Int1", "Int32"], ["Int32", "Int32", "Int32"]],
             "DEPBAR": [[], []],
             "LOP32I": [["Int32"], ["Int32", "Int32"]],
             "ISCADD": [["Int32"], ["Int32", "Int32"]],
@@ -214,18 +215,18 @@ class TypeAnalysis(SaSSTransform):
             for Inst in BB.instructions:
                 for op in Inst.operands:
                     if op in OpTypes:
-                        op._TypeDesc = OpTypes[op]
+                        op.TypeDesc = OpTypes[op]
                     elif op.Reg in OpTypes:
-                        op._TypeDesc = OpTypes[op.Reg]
+                        op.TypeDesc = OpTypes[op.Reg]
                     else:
-                        op._TypeDesc = "NOTYPE"
+                        op.TypeDesc = "NOTYPE"
 
 
         for BB in WorkList:
             for Inst in BB.instructions:
                 print(str(Inst)+" => ", end="")
                 for op in Inst.operands:
-                    print(op._TypeDesc+", ",end="")
+                    print(op.TypeDesc+", ",end="")
                 print("")
 
         # Statistics
@@ -388,10 +389,6 @@ class TypeAnalysis(SaSSTransform):
         modRewrite = self.ModifierOverride(Inst, idx, is_def)
         if modRewrite:
             typeDesc = modRewrite
-
-        # Default PROP for second def operands
-        if is_def and defs_len == 2 and idx == 1:
-            typeDesc = "PROP"
 
         # Operand overrides
         if operand.IsPredicateReg or operand.IsPT:
