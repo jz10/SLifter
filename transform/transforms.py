@@ -22,12 +22,10 @@ class Transforms:
         self.passes.append(Pack64("pack64"))
         # Add special register substitution pass
         self.passes.append(SRSubstitute("SR Substitute"))
-        # Add int to ptr pass
-        self.passes.append(IntToPtr("int to ptr"))
-        # Add def-use analysis pass
-        self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add operand modifier transform pass
         self.passes.append(OpModTransform("operand modifier"))
+        # Add int to ptr pass
+        self.passes.append(IntToPtr("int to ptr"))
         # Add def-use analysis pass
         self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add SSA pass
@@ -39,6 +37,7 @@ class Transforms:
         self.passes.append(XmadToImad("xmad to mul64"))
         # Add FP hack pass
         self.passes.append(FPHack("FP hack"))
+        self.passes.append(RegRemap("reg remap"))
         # Add set zero pass
         self.passes.append(SetZero("set zero"))
         # Add def-use analysis pass

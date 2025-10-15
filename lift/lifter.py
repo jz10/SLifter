@@ -22,17 +22,17 @@ class Lifter :
         self.lift_errors = []
         
     def GetCmpOp(self, Opcode):
-        if Opcode == "GE":
+        if Opcode == "GE" or Opcode == "GEU":
             return ">="
         elif Opcode == "EQ":
             return "=="
-        elif Opcode == "NE":
+        elif Opcode == "NE" or Opcode == "NEU":
             return "!="
-        elif Opcode == "LE":
+        elif Opcode == "LE" or Opcode == "LEU":
             return "<="
-        elif Opcode == "GT":
+        elif Opcode == "GT" or Opcode == "GTU":
             return ">"
-        elif Opcode == "LT":
+        elif Opcode == "LT" or Opcode == "LTU":
             return "<"
 
         return ""

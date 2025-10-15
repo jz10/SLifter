@@ -22,6 +22,7 @@ int main() {
     for(int i = 0; i < N; ++i) {
         A[i] = dist(gen);
         B[i] = dist(gen);
+        C[i] = 0.0f;
     }
 
     launchKernel(_Z5loop3PKfS0_Pfi, gridDim, blockDim,

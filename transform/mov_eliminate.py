@@ -6,6 +6,7 @@ class MovEliminate(SaSSTransform):
         count = 0
 
         for func in module.functions:
+            print(f"Processing function: {func.name}")
             for block in func.blocks:
                 count += self.processBlock(block)
                 

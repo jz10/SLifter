@@ -13,7 +13,7 @@ class InvalidTypeException(Exception):
     pass
 
 class Instruction:
-    def __init__(self, id, opcodes, operands, parentBB, inst_content=None, pflag=None):
+    def __init__(self, id, opcodes, operands, parentBB=None, inst_content=None, pflag=None):
         self._id = id
         self._opcodes = opcodes
         self._operands = operands
@@ -381,7 +381,10 @@ class Instruction:
                     val = IRRegs[irName]
                     
                 if op.IsNegativeReg:
-                    val = IRBuilder.neg(val, f"{name}_neg")
+                    if op.GetTypeDesc().startswith('F'):
+                        val = IRBuilder.fneg(val, f"{name}_fneg")
+                    else:
+                        val = IRBuilder.neg(val, f"{name}_neg")
                 if op.IsNotReg:
                     val = IRBuilder.not_(val, f"{name}_not")
                 if op.IsAbsReg:
@@ -515,6 +518,14 @@ class Instruction:
             v1 = _get_val(uses[0], "iadd_lhs")
             v2 = _get_val(uses[1], "iadd_rhs")
             IRRegs[dest.GetIRName(lifter)] = IRBuilder.add(v1, v2, "iadd")
+            
+        elif opcode == "SEL" or opcode == "FSEL":
+            dest = self.GetDefs()[0]
+            uses = self.GetUses()
+            v1 = _get_val(uses[0], "sel_true")
+            v2 = _get_val(uses[1], "sel_false")
+            pred = _get_val(uses[2], "sel_pred")
+            IRRegs[dest.GetIRName(lifter)] = IRBuilder.select(pred, v1, v2, "sel")
         
         elif opcode == "IADD64":
             dest = self.GetDefs()[0]
@@ -568,7 +579,7 @@ class Instruction:
             dest = self.GetDefs()[0]
             ptr = self.GetUses()[0]
             addr = _get_val(ptr, "ldg_addr")
-            val = IRBuilder.load(addr, "ldg")
+            val = IRBuilder.load(addr, "ldg", typ=dest.GetIRType(lifter))
             IRRegs[dest.GetIRName(lifter)] = val
                 
         elif opcode == "STG":
@@ -914,7 +925,7 @@ class Instruction:
                 
                 IRBuilder.store(IRVal, IRResOp)
 
-        elif opcode == "ISETP" or opcode == "ISETP64":
+        elif opcode == "ISETP" or opcode == "ISETP64" or opcode == "FSETP":
             uses = self.GetUses()
             # Some encodings include a leading PT predicate use; skip it
             start_idx = 1 if len(uses) > 0 and getattr(uses[0], 'IsPT', False) else 0
@@ -999,6 +1010,24 @@ class Instruction:
 
             cast_val = IRBuilder.bitcast(val, dest_type, "cast")
             IRRegs[dest.GetIRName(lifter)] = cast_val
+            
+        elif opcode == "VOTE" or opcode == "VOTEU":
+            dest = self.GetDefs()[0]
+            pred = _get_val(self.GetUses()[0])
+            mask = _get_val(self.GetUses()[1])
+            
+            mode = self.opcodes[1]
+            
+            if mode == "ANY":
+                funcName = "vote_any"
+                if funcName not in lifter.DeviceFuncs:
+                    FuncTy = ir.FunctionType(ir.IntType(32), [ir.IntType(1), ir.IntType(1)], False)
+                    lifter.DeviceFuncs[funcName] = ir.Function(IRBuilder.module, FuncTy, funcName)
+                voteVal = IRBuilder.call(lifter.DeviceFuncs[funcName], [pred, mask], "vote_any")
+            else:
+                raise UnsupportedInstructionException
+
+            IRRegs[dest.GetIRName(lifter)] = voteVal
 
         elif opcode == "MATCH":
             dest = self.GetDefs()[0]
@@ -1098,6 +1127,14 @@ class Instruction:
             v1 = _get_val(a, "prmt_a")
             v2 = _get_val(b, "prmt_b")
             imm8 = _get_val(sel, "prmt_sel")
+            
+            # Reinterpret any non-i32 types to i32
+            if v1.type != ir.IntType(32):
+                v1 = IRBuilder.bitcast(v1, ir.IntType(32), "prmt_a_i32")
+            if v2.type != ir.IntType(32):
+                v2 = IRBuilder.bitcast(v2, ir.IntType(32), "prmt_b_i32")
+            if imm8.type != ir.IntType(32):
+                imm8 = IRBuilder.bitcast(imm8, ir.IntType(32), "prmt_sel_i32")
 
             if "prmt" not in lifter.DeviceFuncs:
                 FuncTy = ir.FunctionType(ir.IntType(32), [ir.IntType(32), ir.IntType(32), ir.IntType(32)], False)

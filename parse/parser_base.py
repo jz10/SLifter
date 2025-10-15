@@ -187,151 +187,138 @@ class SaSSParserBase:
                 inst.operands[0]._Name = format(target_addr, '04x')
                 inst.operands[0]._ImmediateValue = target_addr
 
-        # Preprocess 2: insert NOP so predicated instructions are not adjacent
-        NewInsts = []
-        InstIdCounter = int(Insts[-1].id, 16)
-        for i, inst in enumerate(Insts):
-            if i > 0 and inst.Predicated() and Insts[i-1].Predicated():
-                # Insert NOP instruction
-                nop_inst = Instruction(
-                    id=f"{hex(InstIdCounter + 1)[2:].zfill(4)}",
-                    opcodes=["NOP"],
-                    operands=[],
-                    inst_content="NOP",
-                    parentBB=None,
-                    pflag=None
-                )
-                NewInsts.append(nop_inst)
-                InstIdCounter += 1
-            NewInsts.append(inst)
-        Insts = NewInsts
-
-        Blocks = []
-
         # Identify leaders
         leaders = set()
-        pflags = {}
+        predicated_leaders = set()
+        curr_pred = None
         for i, inst in enumerate(Insts):
             if inst.IsReturn() or inst.IsExit():
                 if i + 1 < len(Insts):
                     leaders.add(Insts[i+1].id)
             if inst.IsBranch():
                 leaders.add(inst.operands[0].Name.zfill(4))
-            if inst.Predicated():
+            if curr_pred != inst.pflag:
                 leaders.add(Insts[i].id)
-                pflags[Insts[i].id] = inst.pflag
-                if i + 1 < len(Insts):
-                    leaders.add(Insts[i+1].id)
+                if inst.Predicated():
+                    predicated_leaders.add(Insts[i].id)
+                curr_pred = inst.pflag
 
         # Create basic blocks
+        Blocks = []
         BlockInsts = []
         pflag = None
+        PrevBlock = None
+        NextBlock = {}
+        BlockByAddr = {}
+        PredicatedBlocks = set()
         for inst in Insts:
             if inst.id in leaders:
                 if BlockInsts:
-                    # Make sure every block contains a terminator
-                    if not BlockInsts or (not BlockInsts[-1].IsExit() and not BlockInsts[-1].IsReturn() and not BlockInsts[-1].IsBranch()):
-                        DestOp = Operand.fromImmediate(inst.id, int(inst.id, 16))                        
-                        NewInst = Instruction(
-                            id=f"branch_{int(inst.id, 16)}",
-                            opcodes=["BRA"],
-                            operands=[DestOp],
-                            inst_content=f"BRA {DestOp.Name}",
+                    BlockId = f"{int(BlockInsts[0].id, 16):04X}"
+                    
+                    # If leader in predicated leaders, insert a PBRA at start,
+                    # remove the predicate of other instructions
+                    PredicatedBlock = False
+                    if BlockInsts[0].id in predicated_leaders:
+                        PredicatedBlock = True
+                        BlockInsts.insert(0, Instruction(
+                            id=f"{int(BlockInsts[0].id, 16):04X}",
+                            opcodes=["PBRA"],
+                            operands=[BlockInsts[0].pflag.Clone()],
+                            inst_content=f"PBRA {BlockInsts[0].pflag.Name}",
                             parentBB=None,
                             pflag=None
-                        )
-                        BlockInsts.append(NewInst)
+                        ))
+                        BlockInsts[1]._id = f"{int(BlockInsts[0].id, 16)+1:04X}"
+                        for PredInst in BlockInsts:
+                            PredInst._PFlag = None
 
-                    Block = BasicBlock(BlockInsts[0].id, pflag, BlockInsts)
-                    pflag = pflags.get(inst.id, None)
+                    # Create block
+                    Block = BasicBlock(BlockId, pflag, BlockInsts)
                     Blocks.append(Block)
+                    
+                    if PrevBlock:
+                        NextBlock[PrevBlock] = Block
+                    PrevBlock = Block
+                    
+                    BlockByAddr[Block.addr_content] = Block
+                    
+                    if PredicatedBlock:
+                        PredicatedBlocks.add(Block)
+                    
                 BlockInsts = [inst]
             else:
                 BlockInsts.append(inst)
-
-        # Preprocessor and sucessors
-        idToBlock = {block.addr_content: block for block in Blocks}
-
-        for i, block in enumerate(Blocks):
-            last = block.instructions[-1]
-            first = block.instructions[0]
-
-            # Add fallthrough if predicated
-            if first.Predicated():
-                if i + 1 < len(Blocks) and i - 1 >= 0:
-                    nextBlock = Blocks[i + 1]
-                    prevBlock = Blocks[i - 1]
-                    prevBlock.AddSucc(nextBlock)
-                    nextBlock.AddPred(prevBlock)
-
-            # If the last instruction is a return or exit, no successors
-            if last.IsReturn() or last.IsExit():
-                continue
-
-            elif last.IsBranch():
-                targetBlock = idToBlock.get(last.operands[0].Name.zfill(4))
-                if targetBlock is None:
-                    continue
-
-                block.AddSucc(targetBlock)
-                targetBlock.AddPred(block)
+                
+        # Construct CFG edges
+        for Block in Blocks:
+            Terminator = Block.GetTerminator()
             
+            # If no branch, insert branch to the next block
+            if not Terminator:
+                NextB = NextBlock[Block]
+                DestOp = Operand.fromImmediate(NextB.addr_content, int(NextB.addr_content, 16))                        
+                NewInst = Instruction(
+                    id=f"{int(Block.instructions[-1].id, 16)+1:04X}",
+                    opcodes=["BRA"],
+                    operands=[DestOp]
+                )
+                Block.instructions.append(NewInst)
+                
+                Block.AddSucc(NextB)
+                NextB.AddPred(Block)
+            elif Terminator.IsBranch():
+                # If the terminator is a branch, add the successor
+                DestOp = Terminator.GetUses()[0]
+                NextB = BlockByAddr[DestOp.Name]
+                Block.AddSucc(NextB)
+                NextB.AddPred(Block)
+            elif Terminator.IsReturn() or Terminator.IsExit():
+                # If the terminator is a return or exit, do nothing
+                pass
             else:
-                if i + 1 < len(Blocks):
-                    nextBlock = Blocks[i + 1]
-                    block.AddSucc(nextBlock)
-                    nextBlock.AddPred(block)
+                raise Exception("Unrecognized terminator")
+            
+        # Process predicated blocks
+        InsertBlock = {}
+        for block in PredicatedBlocks:
+            # Split block by leaving pbra in the original block, rest put in a new block
+            pbraInst = block.instructions[0]
+            NewBlockInsts = block.instructions[1:]
+            NewBlock = BasicBlock(NewBlockInsts[0].id, None, NewBlockInsts)
+            block.instructions = [pbraInst]
+            
+            InsertBlock[block] = NewBlock
+            BlockByAddr[NewBlock.addr_content] = NewBlock
+            
+            # Keep predecessor to first block, move sucessors to new block
+            NewBlock._succs = block._succs
+            block._succs = []
+            for succ in NewBlock._succs:
+                succ._preds.remove(block)
+                succ.AddPred(NewBlock)
+            
+            NewBlock.AddPred(block)
+            block.AddSucc(NewBlock)
+            
+            block.AddSucc(NextBlock[block])
+            NextBlock[block].AddPred(block)
+            
+            # Update pbra instruction to point to the two blocks
+            TrueBrBlock = NewBlock
+            FalseBrBlock = NextBlock[block]
+            pbraInst._operands.append(Operand.fromImmediate(TrueBrBlock.addr_content, int(TrueBrBlock.addr_content, 16)))
+            pbraInst._operands.append(Operand.fromImmediate(FalseBrBlock.addr_content, int(FalseBrBlock.addr_content, 16)))
+            
+        OldBlocks = Blocks.copy()
+        Blocks = []
+        for block in OldBlocks:
+            Blocks.append(block)
+            if block in InsertBlock:
+                Blocks.append(InsertBlock[block])
+
 
         # print("Predicate converted CFG:")
-        # for block in Blocks:
-        #     print(f"  Block: {block.addr_content}", end="")
-        #     print(f" from: [", end="")
-        #     for pred in block._preds:
-        #         print(f"{pred.addr_content},", end="")
-        #     print(f"]", end="")
-        #     print(f" to: [", end="")
-        #     for succ in block._succs:
-        #         print(f"{succ.addr_content},", end="")
-        #     print(f"]")
-        #     for inst in block.instructions:
-        #         print(f"    {inst.id}    {inst}")
-
-
-        # Add conditional branch for the predecessor of the predicated instruction
-        for i, block in enumerate(Blocks):
-            firstInst = block.instructions[0]
-            if firstInst.Predicated():                
-                op = firstInst.pflag.Clone()
-
-                if len(block._succs) > 1:
-                    print(f"Warning: predicated block successor > 1")
-                    raise UnmatchedControlCode
-
-                TrueBrBlock = block
-                FalseBrBlock = Blocks[i + 1]
-
-                srcOp1 = Operand.fromImmediate(TrueBrBlock.addr_content, int(TrueBrBlock.addr_content, 16))
-                srcOp2 = Operand.fromImmediate(FalseBrBlock.addr_content, int(FalseBrBlock.addr_content, 16))
-
-                NewInst = Instruction(
-                    id=f"pbra_{firstInst.id}",
-                    opcodes=["PBRA"],
-                    operands=[op, srcOp1, srcOp2],
-                    parentBB=None,
-                    pflag=None
-                )
-                
-                # Remove predication from the original instruction
-                firstInst._PFlag = None
-
-                for pred in block._preds:
-                    if FalseBrBlock not in pred._succs:
-                        pred.AddSucc(FalseBrBlock)
-                    if pred not in FalseBrBlock._preds:
-                        FalseBrBlock.AddPred(pred)
-                    pred.SetTerminator(NewInst)
-
-        # print("Add conditional branch for the predecessor of the predicated instruction:")
         # for block in Blocks:
         #     print(f"  Block: {block.addr_content}", end="")
         #     print(f" from: [", end="")
@@ -350,14 +337,14 @@ class SaSSParserBase:
             for inst in block.instructions:
                 inst._Parent = block
                 
-        # No need to process single basic block case
-        if len(Blocks) == 1:
-            return Blocks
+        # # No need to process single basic block case
+        # if len(Blocks) == 1:
+        #     return Blocks
 
-        for BB in Blocks:
-            BB.EraseRedundency() # Remove NOP and dead instructions after exit(spin-loop senteniel)
-            if BB.Isolated():
-                Blocks.remove(BB)
+        # for BB in Blocks:
+        #     BB.EraseRedundency() # Remove NOP and dead instructions after exit(spin-loop senteniel)
+        #     if BB.Isolated():
+        #         Blocks.remove(BB)
             
         return Blocks
     

@@ -7,6 +7,7 @@ SR_NTID = 'SR_NTID'
 SR_CTAID = 'SR_CTAID'
 SR_LANE = 'SR_LANE'
 SR_WARP = 'SR_WARP'
+SR_CLOCK = 'SR_CLOCK'
 
 class InvalidOperandException(Exception):
     pass
@@ -29,6 +30,14 @@ class Operand:
                 ImmediateValue = int(ValueStrs[0], 0)
             Name = Operand_Content
             return Operand.fromImmediate(Name, ImmediateValue)
+        else:
+            # Try to parse as a floating-point number
+            try:
+                ImmediateValue = float(Operand_Content)
+                Name = Operand_Content
+                return Operand.fromImmediate(Name, ImmediateValue)
+            except ValueError:
+                pass
 
         # Check if it is a register for address pointer, e.g. [R0]
         if Operand_Content.startswith('[') and Operand_Content.endswith(']'):
@@ -134,6 +143,7 @@ class Operand:
         self._TypeDesc = "NOTYPE"
         self._IRType = None
         self._IRRegName = None
+        self._IsFloat = "0x" not in Name if IsImmediate else False
         self.DefiningInsts = set()
 
     @property
@@ -179,6 +189,10 @@ class Operand:
         return True
     
     @property
+    def IsFloatImmediate(self):
+        return self._IsFloat
+    
+    @property
     def IsArg(self):
         return self._IsArg
     
@@ -204,7 +218,8 @@ class Operand:
                               self._Name.startswith(SR_NTID) or 
                               self._Name.startswith(SR_CTAID) or 
                               self._Name.startswith(SR_LANE) or 
-                              self._Name.startswith(SR_WARP))
+                              self._Name.startswith(SR_WARP) or 
+                              self._Name.startswith(SR_CLOCK))
     
     @property
     def IsNegativeReg(self):
@@ -293,6 +308,8 @@ class Operand:
         elif self.IsSpecialReg:
             return self._Name
         elif self.IsImmediate:
+            if self.IsFloatImmediate:
+                return str(self._ImmediateValue)
             return hex(self._ImmediateValue)
         else:
             return self._Name if self._Name else "<??>"

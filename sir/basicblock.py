@@ -5,6 +5,7 @@ class BasicBlock:
         # The address of the start of this basic block
         self.addr_content = addr_content
         if addr_content != None:
+            self.addr_content = addr_content.lower()
             # Calculate the integer offset
             self.addr = int(addr_content, base = 16)
         # Instruction list
@@ -87,7 +88,11 @@ class BasicBlock:
             Inst.GetRegs(Regs, lifter)
 
     def GetTerminator(self):
-        return self.instructions[-1]
+        LastInst = self.instructions[-1]
+        if LastInst.IsExit() or LastInst.IsBranch() or LastInst.IsReturn():
+            return LastInst
+        else:
+            return None
 
     def SetTerminator(self, Inst):
         Inst = Inst.Clone()

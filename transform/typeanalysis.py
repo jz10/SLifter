@@ -12,121 +12,127 @@ class TypeAnalysis(SaSSTransform):
         # if no propagate type is found, default pointer type to PTR
         # operands with ANY can have any type
         self.instructionTypeTable = {
-            "FADD": ["Float32", "Float32", "Float32", "NA", "NA", "NA"],
-            "FFMA": ["Float32", "Float32", "Float32", "Float32", "NA", "NA"],
-            "FMUL": ["Float32", "Float32", "Float32", "NA", "NA", "NA"],
-            "FSETP": ["Int1", "PROP", "PROP", "PROP", "PROP", "NA"],
-            "MUFU": ["Float32", "Float32", "Float32", "NA", "NA", "NA"],
-            "S2R": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "IMAD": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
-            "IADD3": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
-            "XMAD": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
-            "IADD32I": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "MOV": ["Int32", "Int32", "NA", "NA", "NA", "NA"],
-            "IADD": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "ISETP": ["Int1", "PROP", "PROP", "PROP", "PROP", "NA"],
-            "AND": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
-            "OR": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
-            "XOR": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
-            "NOT": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
-            "LEA": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "SHL": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
-            "SHR": ["PROP", "PROP", "PROP", "NA", "NA", "NA"],
-            "LOP3": ["PROP", "PROP", "PROP", "PROP", "PROP", "PROP"],
-            "LDG": ["PROP", "PROP_PTR", "NA", "NA", "NA", "NA"],
-            "LD": ["PROP", "PROP_PTR", "NA", "NA", "NA", "NA"],
-            "SULD": ["PROP", "PROP_PTR", "NA", "NA", "NA", "NA"],
-            "STG": ["PROP_PTR", "PROP", "NA", "NA", "NA", "NA"],
-            "ST" : ["PROP_PTR", "PROP", "NA", "NA", "NA", "NA"],
-            "SUST": ["PROP_PTR", "PROP", "NA", "NA", "NA", "NA"],
-            "F2I": ["Int32", "Float32", "NA", "NA", "NA", "NA"],
-            "I2F": ["Float32", "Int32", "NA", "NA", "NA", "NA"],
-            "NOP": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "BRA": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "EXIT": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "RET": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "SYNC": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "BAR": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "SSY": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "SHF": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
-            "DEPBAR": ["NA", "NA", "NA", "NA", "NA", "NA"],
-            "LOP32I": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "ISCADD": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "MOV32I": ["Int32", "Int32", "NA", "NA", "NA", "NA"],
-            "IABS": ["Int32", "Int32", "NA", "NA", "NA", "NA"],
-            "ULDC": ["PROP", "PROP", "NA", "NA", "NA", "NA"],
-            "DMUL": ["Float64", "Float64", "Float64", "NA", "NA", "NA"],
-            "DFMA": ["Float64", "Float64", "Float64", "Float64", "NA", "NA"],
-            "LDS": ["PROP", "Int32", "NA", "NA", "NA", "NA"],
-            "STS": ["Int32", "PROP", "NA", "NA", "NA", "NA"],
-            "MATCH": ["Int32", "Int32", "NA", "NA", "NA"],
-            "BREV" : ["Int32", "Int32", "NA", "NA", "NA", "NA"],
-            "FLO": ["Int32", "Int32", "NA", "NA", "NA", "NA"],
-            "POPC": ["Int32", "Int32", "NA", "NA", "NA", "NA"],
-            "RED": ["Int64", "Int32", "NA", "NA", "NA", "NA"],
-            "IMNMX": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "PRMT": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
-            "PLOP3": ["PROP", "PROP", "PROP", "PROP", "PROP", "PROP"],
-            "HMMA" : ["Float32"] * 12,
-            "MOVM" : ["PROP", "PROP", "NA", "NA", "NA", "NA"],
-
+            "FADD": [["Float32"], ["Float32", "Float32"]],
+            "FFMA": [["Float32"], ["Float32", "Float32", "Float32"]],
+            "FMUL": [["Float32"], ["Float32", "Float32"]],
+            "FSETP": [["Int1", "Int1"], ["Float32", "Float32", "Int1"]],
+            "FSEL": [["Float32"], ["Float32", "Float32", "Int1"]],
+            "MUFU": [["Float32"], ["Float32"]],
+            "S2R": [["Int32"], ["Int32", "Int32"]],
+            "IMAD": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "IADD3": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "XMAD": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "IADD32I": [["Int32"], ["Int32", "Int32"]],
+            "MOV": [["PROP"], ["PROP"]],
+            "IADD": [["Int32"], ["Int32", "Int32"]],
+            "ISETP": [["Int1"], ["PROP", "PROP", "PROP", "PROP"]],
+            "AND": [["PROP"], ["PROP", "PROP"]],
+            "OR": [["PROP"], ["PROP", "PROP"]],
+            "XOR": [["PROP"], ["PROP", "PROP"]],
+            "NOT": [["PROP"], ["PROP", "PROP"]],
+            "LEA": [["Int32"], ["Int32", "Int32"]],
+            "SHL": [["PROP"], ["PROP", "PROP"]],
+            "SHR": [["PROP"], ["PROP", "PROP"]],
+            "LOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
+            "LDG": [["PROP"], ["PROP_PTR"]],
+            "LD": [["PROP"], ["PROP_PTR"]],
+            "SULD": [["PROP"], ["PROP_PTR"]],
+            "STG": [[], ["PROP_PTR", "PROP"]],
+            "ST": [[], ["PROP_PTR", "PROP"]],
+            "SUST": [[], ["PROP_PTR", "PROP"]],
+            "F2I": [["Int32"], ["Float32"]],
+            "I2F": [["Float32"], ["Int32"]],
+            "SEL": [["Int32"], ["Int32", "Int32", "Int1"]],
+            "NOP": [[], []],
+            "BRA": [[], []],
+            "EXIT": [[], []],
+            "RET": [[], []],
+            "SYNC": [[], []],
+            "BAR": [[], []],
+            "SSY": [[], []],
+            "SHF": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "DEPBAR": [[], []],
+            "LOP32I": [["Int32"], ["Int32", "Int32"]],
+            "ISCADD": [["Int32"], ["Int32", "Int32"]],
+            "MOV32I": [["Int32"], ["Int32"]],
+            "IABS": [["Int32"], ["Int32"]],
+            "ULDC": [["PROP"], ["PROP"]],
+            "DMUL": [["Float64"], ["Float64", "Float64"]],
+            "DFMA": [["Float64"], ["Float64", "Float64", "Float64"]],
+            "LDS": [["PROP"], ["Int32"]],
+            "STS": [[], ["Int32", "PROP"]],
+            "VOTE": [["Int32"], ["Int1", "Int1"]],
+            "VOTEU": [["Int32"], ["Int1", "Int1"]],
+            "MATCH": [["Int32"], ["Int32"]],
+            "BREV": [["Int32"], ["Int32"]],
+            "FLO": [["Int32"], ["Int32"]],
+            "POPC": [["Int32"], ["Int32"]],
+            "RED": [[], ["Int64", "Int32"]],
+            "IMNMX": [["Int32"], ["Int32", "Int32"]],
+            "PRMT": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "PLOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
+            "HMMA": [["Float32"] * 4, ["Float32"] * 8],
+            "MOVM": [["PROP"], ["PROP"]],
 
             # Uniform variants
-            "USHF": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
-            "ULEA": ["Int32", "Int32", "Int32", "NA", "NA", "NA"],
-            "ULOP3": ["PROP", "PROP", "PROP", "PROP", "PROP", "PROP"],
-            "UIADD3": ["Int32", "Int32", "Int32", "Int32", "NA", "NA"],
-            "UMOV": ["Int32", "Int32", "NA", "NA", "NA", "NA"],
+            "USHF": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "ULEA": [["Int32"], ["Int32", "Int32"]],
+            "ULOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
+            "UIADD3": [["Int32"], ["Int32", "Int32", "Int32"]],
+            "UMOV": [["Int32"], ["Int32"]],
 
             # Dummy instruction types
-            "PHI": ["PROP", "PROP", "PROP", "PROP", "NA", "NA"],
-            "INTTOPTR": ["PROP_PTR", "Int64", "NA", "NA", "NA", "NA"],
-            "PACK64": ["Int64", "Int32", "Int32", "NA", "NA", "NA"],
-            "UNPACK64": ["Int32", "Int64", "NA", "NA", "NA", "NA"],
-            "CAST64": ["Int64", "Int32", "NA", "NA", "NA", "NA"],
-            "IADD64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
-            "IMAD64": ["Int64", "Int32", "Int32", "Int64", "NA", "NA"],
-            "SHL64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
-            "MOV64": ["Int64", "Int64", "NA", "NA", "NA", "NA"],
-            "IADD32I64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
-            "PHI64": ["Int64", "Int64", "Int64", "Int64", "Int64", "NA"],
-            "BITCAST": ["ANY", "ANY", "NA", "NA", "NA", "NA"],
-            "PBRA": ["Int1", "NA", "NA", "NA", "NA", "NA"],
-            "LEA64": ["Int64", "Int64", "Int64", "Int64", "NA", "NA"],
-            "SETZERO": ["PROP", "NA", "NA", "NA", "NA", "NA"],
-            "ULDC64": ["PROP", "PROP", "NA", "NA", "NA", "NA"],
-            "LDG64": ["Int64", "Int64_PTR", "NA", "NA", "NA", "NA"],
-            "SHR64": ["Int64", "Int64", "Int64", "NA", "NA", "NA"],
-            "ISETP64": ["Int1", "PROP", "PROP", "PROP", "PROP", "NA"],
-            "IADD364": ["Int64", "Int64", "Int64", "Int64", "NA", "NA"],
+            "PHI": [["PROP"], ["PROP", "PROP", "PROP"]],
+            "INTTOPTR": [["PROP_PTR"], ["Int64"]],
+            "PACK64": [["Int64"], ["Int32", "Int32"]],
+            "UNPACK64": [["Int32"], ["Int64"]],
+            "CAST64": [["Int64"], ["Int32"]],
+            "IADD64": [["Int64"], ["Int64", "Int64"]],
+            "IMAD64": [["Int64"], ["Int32", "Int32", "Int64"]],
+            "SHL64": [["Int64"], ["Int64", "Int64"]],
+            "MOV64": [["Int64"], ["Int64"]],
+            "IADD32I64": [["Int64"], ["Int64", "Int64"]],
+            "PHI64": [["Int64"], ["Int64", "Int64", "Int64", "Int64"]],
+            "BITCAST": [["ANY"], ["ANY"]],
+            "PBRA": [[], ["Int1"]],
+            "LEA64": [["Int64"], ["Int64", "Int64", "Int64"]],
+            "SETZERO": [["PROP"], []],
+            "ULDC64": [["PROP"], ["PROP"]],
+            "LDG64": [["Int64"], ["Int64_PTR"]],
+            "SHR64": [["Int64"], ["Int64", "Int64"]],
+            "ISETP64": [["Int1"], ["PROP", "PROP", "PROP", "PROP"]],
+            "IADD364": [["Int64"], ["Int64", "Int64", "Int64"]],
         }
 
         self.modifierOverrideTable = {
             "MATCH": {
-                "U32": ["ANY", "Int32"],
-                "U64": ["ANY", "Int64"]
+                "U32": [["ANY"], ["Int32"]],
+                "U64": [["ANY"], ["Int64"]],
             },
             "IMNMX": {
-                "U32": ["Int32", "Int32", "Int32"],
-                "U64": ["Int64", "Int64", "Int64"]
+                "U32": [["Int32"], ["Int32", "Int32"]],
+                "U64": [["Int64"], ["Int64", "Int64"]],
             },
             "HMMA": {
-                "F32": ["Float32"] * 12,
-                "F16": ["Float16"] * 12,
-            }
+                "F32": [["Float32"] * 4, ["Float32"] * 8],
+                "F16": [["Float16"] * 4, ["Float16"] * 8],
+            },
         }
 
 
     def apply(self, module):
+        super().apply(module)
+        print("=== Start of TypeAnalysis ===")
         for func in module.functions:
+            print(f"Processing function: {func.name}")
             self.ProcessFunc(func)
+        print("=== End of TypeAnalysis ===")
 
 
     def ProcessFunc(self, function):
         WorkList = self.TraverseCFG(function)
 
         OpTypes = {}
-        print("=== Start of TypeAnalysis ===")
 
         Changed = True
 
@@ -173,13 +179,13 @@ class TypeAnalysis(SaSSTransform):
                         orig_reg = op.Reg
                         NewRegName = f"{orig_reg}_bitcast"
 
+                        SrcReg = op.Clone()
                         BitcastReg = Operand.fromReg(NewRegName, NewRegName)
 
                         BitcastInst = Instruction(
                             id=f"{Inst.id}_type_resolve", 
                             opcodes=["BITCAST"],
-                            operands=[BitcastReg, op],
-                            inst_content=f"BITCAST {BitcastReg}, {orig_reg}",
+                            operands=[BitcastReg, SrcReg],
                             parentBB=BB
                         )
                         NewInstructions.append(BitcastInst)
@@ -348,7 +354,7 @@ class TypeAnalysis(SaSSTransform):
 
         return True
 
-    def ModifierOverride(self, Inst, i):
+    def ModifierOverride(self, Inst, idx, is_def):
         op = Inst.opcodes[0]
 
         if op not in self.modifierOverrideTable:
@@ -358,37 +364,37 @@ class TypeAnalysis(SaSSTransform):
 
         for mod in Inst.opcodes[1:]:
             if mod in modifierTable:
-                typeArr = modifierTable[mod]
-                if i < len(typeArr):
-                    return typeArr[i]
+                def_override, use_override = modifierTable[mod]
+                if is_def:
+                    if idx < len(def_override):
+                        return def_override[idx]
+                else:
+                    if idx < len(use_override):
+                        return use_override[idx]
 
         return None
 
         
-    def ResolveType(self, Inst, i):
+    def ResolveType(self, Inst, operand, idx, defs_len, is_def):
         op = Inst._opcodes[0]
+        def_types, use_types = self.instructionTypeTable[op]
+        type_list = def_types if is_def else use_types
 
-        # Special case for the predicate register in instructions with multiple defs
-        # E.g. LEA R12, P0 = R6.reuse, R4, 0x2, because of P0, decrease index by 1 to get correct entry in table
         typeDesc = "NA"
-        if i < len(self.instructionTypeTable[op]):
-            if len(Inst.GetDefs()) > 1 and i > 1:
-                typeDesc = self.instructionTypeTable[op][i-1]
-            else:
-                typeDesc = self.instructionTypeTable[op][i]
+        if idx < len(type_list):
+            typeDesc = type_list[idx]
 
         # Modifier overrides
-        modRewrite = self.ModifierOverride(Inst, i)
+        modRewrite = self.ModifierOverride(Inst, idx, is_def)
         if modRewrite:
             typeDesc = modRewrite
-            
+
         # Default PROP for second def operands
-        # TODO: make the table work with variable def operands instead of just 1
-        if i == 1 and len(Inst.GetDefs()) == 2:
+        if is_def and defs_len == 2 and idx == 1:
             typeDesc = "PROP"
 
         # Operand overrides
-        if Inst.operands[i].IsPredicateReg or Inst.operands[i].IsPT:
+        if operand.IsPredicateReg or operand.IsPT:
             typeDesc = "Int1"
 
         return typeDesc
@@ -400,42 +406,54 @@ class TypeAnalysis(SaSSTransform):
         if op not in self.instructionTypeTable:
             print(f"Warning: Unhandled opcode {op} in {Inst}")
             return
-        
+
+        defs = Inst.GetDefs()
+        uses = Inst.GetUses()
+        defs_len = len(defs)
+
+        resolved_def_types = [
+            self.ResolveType(Inst, operand, idx, defs_len, True)
+            for idx, operand in enumerate(defs)
+        ]
+        resolved_use_types = [
+            self.ResolveType(Inst, operand, idx, defs_len, False)
+            for idx, operand in enumerate(uses)
+        ]
+
+        def_pairs = list(zip(defs, resolved_def_types))
+        use_pairs = list(zip(uses, resolved_use_types))
+
         # Static resolve types
-        propType = "NOTYPE"
-        for i, operand in enumerate(Inst.operands):
-            typeDesc = self.ResolveType(Inst, i)
-
+        for operand, typeDesc in def_pairs + use_pairs:
             if typeDesc != "NA" and "PROP" not in typeDesc and typeDesc != "ANY":
-
-                if operand.Reg in OpTypes and self.TypeConflict(OpTypes[operand.Reg], typeDesc):
-                    print(f"Warning: Type mismatch for {operand.Reg} in {Inst}: {OpTypes[operand.Reg]} vs {typeDesc}")
-                    self.Conflicts[Inst] = (operand, OpTypes[operand.Reg], typeDesc)
-                    return
+                if not Inst.IsPhi(): # Propagate conflicts to somewhere else, not in PHI
+                    if operand.Reg in OpTypes and self.TypeConflict(OpTypes[operand.Reg], typeDesc):
+                        print(f"Warning: Type mismatch for {operand.Reg} in {Inst}: {OpTypes[operand.Reg]} vs {typeDesc}")
+                        self.Conflicts[Inst] = (operand, OpTypes[operand.Reg], typeDesc)
+                        return
 
                 self.SetOptype(OpTypes, operand, typeDesc)
 
         # Find propagate type
-        for i, operand in enumerate(Inst.operands):
-            typeDesc = self.ResolveType(Inst, i)
+        propType = "NOTYPE"
+        for operand, typeDesc in def_pairs + use_pairs:
             if typeDesc == "PROP":
                 existing = self.GetOptype(OpTypes, operand)
                 if existing != "NOTYPE":
-                    if propType != "NOTYPE" and self.TypeConflict(existing, propType):
-                        print(f"Warning: Propagation type mismatch for {operand} in {Inst}: {existing} vs {propType}")
-                        self.Conflicts[Inst] = (operand, existing, propType)
-                        return
+                    if not Inst.IsPhi(): # Propagate conflicts to somewhere else, not in PHI
+                        if propType != "NOTYPE" and self.TypeConflict(existing, propType):
+                            print(f"Warning: Propagation type mismatch for {operand} in {Inst}: {existing} vs {propType}")
+                            self.Conflicts[Inst] = (operand, existing, propType)
+                            return
 
                     propType = existing
 
         # Propagate types
-        for i, operand in enumerate(Inst.operands):
-            typeDesc = self.ResolveType(Inst, i)
-
+        for operand, typeDesc in def_pairs + use_pairs:
             if typeDesc == "PROP" and propType != "NOTYPE":
                 self.SetOptype(OpTypes, operand, propType)
             elif typeDesc == "PROP_PTR":
-                if propType == "NOTYPE" or propType == "ANY" or propType == "NA":
+                if propType in ["NOTYPE", "ANY"]:
                     self.SetOptype(OpTypes, operand, "PTR")
                 else:
                     self.SetOptype(OpTypes, operand, propType + "_PTR")

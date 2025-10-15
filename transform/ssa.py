@@ -22,6 +22,7 @@ class SSA(SaSSTransform):
             dom_tree = self.computeDominatorTree(func)
             self.insertPhiNodes(func, dom_tree)
             self.renameVariables(func, dom_tree)
+            self.insertSetZeroForUndefs(func)
 
         print("=== End of SSA ===")
 
@@ -87,6 +88,8 @@ class SSA(SaSSTransform):
     def renameVariables(self, function, dom_tree):
         self.var_stacks = defaultdict(list)
         self.ssa_counter = defaultdict(int)
+        self.undefined_ssa = {}
+        self.entry_block = dom_tree.entry if dom_tree else None
 
         # Start from the dom-tree entry, not function.blocks[0] (in case they differ)
         self.renameBlock(dom_tree.entry, dom_tree)
@@ -133,9 +136,7 @@ class SSA(SaSSTransform):
 
             # Rename uses (including predicate flags)
             for use_op in inst.GetUsesWithPredicate():
-                if not use_op.Reg:
-                    continue
-                if use_op.IsPT or use_op.IsRZ or use_op.IsSpecialReg or not use_op.IsReg:
+                if not use_op.IsWritableReg:
                     continue
 
                 original_reg = self.getOriginalReg(use_op.Reg)
@@ -192,18 +193,52 @@ class SSA(SaSSTransform):
         self.ssa_counter[original_reg] += 1
         return f"{original_reg}@{self.ssa_counter[original_reg]}"
 
-    # New helpers
-
     def getCurrentNameOrVersion0(self, original_reg):
-        """
-        Return the current SSA name for original_reg if any; otherwise create version 0.
-        """
-        if not self.var_stacks[original_reg]:
-            # v0 = f"{original_reg}@0"
-            # # Do not bump the counter for version 0
-            # if self.ssa_counter[original_reg] == 0:
-            #     # Keep counter = 0 so next def becomes @1
-            #     pass
-            # self.var_stacks[original_reg].append(v0)
-            self.var_stacks[original_reg].append("RZ")
-        return self.var_stacks[original_reg][-1]
+        if not original_reg:
+            return None
+
+        stack = self.var_stacks[original_reg]
+        if stack:
+            return stack[-1]
+
+        zero_name = self.undefined_ssa.get(original_reg)
+        if not zero_name:
+            zero_name = f"{original_reg}@0"
+            self.undefined_ssa[original_reg] = zero_name
+
+        stack.append(zero_name)
+        return zero_name
+
+    def insertSetZeroForUndefs(self, function):
+        
+
+        entry_block = function.blocks[0]
+
+        # Insert after phi
+        insert_idx = 0
+        while insert_idx < len(entry_block.instructions) and entry_block.instructions[insert_idx].IsPhi():
+            insert_idx += 1
+
+        new_insts = []
+        for original_reg in sorted(self.undefined_ssa):
+            ssa_name = self.undefined_ssa[original_reg]
+            dest_op = Operand.fromReg(original_reg, original_reg)
+            dest_op.SetReg(ssa_name)
+            dest_op._IRRegName = None
+
+            inst_id = f"setzero_{ssa_name}"
+            if entry_block.addr_content:
+                inst_id = f"{entry_block.addr_content}_{inst_id}"
+
+            new_insts.append(
+                Instruction(
+                    id=inst_id,
+                    opcodes=["SETZERO"],
+                    operands=[dest_op],
+                    inst_content=f"SETZERO {ssa_name}",
+                    parentBB=entry_block
+                )
+            )
+
+        entry_block.instructions[insert_idx:insert_idx] = new_insts
+        self.undefined_ssa = {}
