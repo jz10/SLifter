@@ -4,7 +4,6 @@ from transform.ssa import SSA
 from transform.reg_remap import RegRemap
 from transform.xmad_to_imad import XmadToImad
 from transform.sr_substitute import SRSubstitute
-from transform.inttoptr import IntToPtr
 from transform.pack64 import Pack64
 from transform.defuse_analysis import DefUseAnalysis
 from transform.mov_eliminate import MovEliminate
@@ -24,8 +23,6 @@ class Transforms:
         self.passes.append(SRSubstitute("SR Substitute"))
         # Add operand modifier transform pass
         self.passes.append(OpModTransform("operand modifier"))
-        # Add int to ptr pass
-        self.passes.append(IntToPtr("int to ptr"))
         # Add def-use analysis pass
         self.passes.append(DefUseAnalysis("def-use analysis"))
         # Add SSA pass

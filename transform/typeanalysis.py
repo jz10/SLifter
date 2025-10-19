@@ -8,8 +8,8 @@ class TypeAnalysis(SaSSTransform):
         super().__init__(name)
 
         # operands with PROP must have the same type
-        # operands with PROP_PTR must have the same type but with _PTR suffix
-        # if no propagate type is found, default pointer type to PTR
+        # operands with PROP_PTR must have the same type but with _PTR suffix(unused for now)
+        # address operands are represented as Int64 and cast to pointers in the lifter
         # operands with ANY can have any type
         self.instructionTypeTable = {
             "FADD": [["Float32"], ["Float32", "Float32"]],
@@ -34,12 +34,12 @@ class TypeAnalysis(SaSSTransform):
             "SHL": [["PROP"], ["PROP", "PROP"]],
             "SHR": [["PROP"], ["PROP", "PROP"]],
             "LOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
-            "LDG": [["PROP"], ["PROP_PTR"]],
-            "LD": [["PROP"], ["PROP_PTR"]],
-            "SULD": [["PROP"], ["PROP_PTR"]],
-            "STG": [[], ["PROP_PTR", "PROP"]],
-            "ST": [[], ["PROP_PTR", "PROP"]],
-            "SUST": [[], ["PROP_PTR", "PROP"]],
+            "LDG": [["PROP"], ["Int64"]],
+            "LD": [["PROP"], ["Int64"]],
+            "SULD": [["PROP"], ["Int64"]],
+            "STG": [[], ["Int64", "PROP"]],
+            "ST": [[], ["Int64", "PROP"]],
+            "SUST": [[], ["Int64", "PROP"]],
             "F2I": [["Int32"], ["Float32"]],
             "I2F": [["Float32"], ["Int32"]],
             "SEL": [["Int32"], ["Int32", "Int32", "Int1"]],
@@ -84,7 +84,6 @@ class TypeAnalysis(SaSSTransform):
 
             # Dummy instruction types
             "PHI": [["PROP"], ["PROP", "PROP", "PROP"]],
-            "INTTOPTR": [["PROP_PTR"], ["Int64"]],
             "PACK64": [["Int64"], ["Int32", "Int32"]],
             "UNPACK64": [["Int32"], ["Int64"]],
             "CAST64": [["Int64"], ["Int32"]],
@@ -99,7 +98,7 @@ class TypeAnalysis(SaSSTransform):
             "LEA64": [["Int64"], ["Int64", "Int64", "Int64"]],
             "SETZERO": [["PROP"], []],
             "ULDC64": [["PROP"], ["PROP"]],
-            "LDG64": [["Int64"], ["Int64_PTR"]],
+            "LDG64": [["Int64"], ["Int64"]],
             "SHR64": [["Int64"], ["Int64", "Int64"]],
             "ISETP64": [["Int1"], ["PROP", "PROP", "PROP", "PROP"]],
             "IADD364": [["Int64"], ["Int64", "Int64", "Int64"]],

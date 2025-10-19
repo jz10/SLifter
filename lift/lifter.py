@@ -236,6 +236,19 @@ class Lifter :
                 return self.ir.Constant(op.GetIRType(self), op.ImmediateValue)
             raise UnsupportedInstructionException(f"Unsupported operand type: {op}")
 
+        def _as_pointer(addr_val, pointee_ty, name):
+            if getattr(addr_val.type, "is_pointer", False):
+                return addr_val
+
+            if not hasattr(addr_val.type, "width"):
+                raise InvalidTypeException(f"Expected integer address for {name}, got {addr_val.type}")
+
+            if addr_val.type.width != 64:
+                raise InvalidTypeException(f"Expected 64-bit address for {name}, got {addr_val.type.width}-bit value")
+
+            ptr_ty = self.ir.PointerType(pointee_ty)
+            return IRBuilder.inttoptr(addr_val, ptr_ty, name)
+
         if opcode == "MOV" or opcode == "MOV64" or opcode == "UMOV":
             dest = Inst.GetDefs()[0]
             src = Inst.GetUses()[0]
@@ -425,7 +438,9 @@ class Lifter :
             dest = Inst.GetDefs()[0]
             ptr = Inst.GetUses()[0]
             addr = _get_val(ptr, "ldg_addr")
-            val = IRBuilder.load(addr, "ldg", typ=dest.GetIRType(self))
+            pointee_ty = dest.GetIRType(self)
+            addr_ptr = _as_pointer(addr, pointee_ty, f"{ptr.GetIRName(self)}_addr_ptr" if ptr.IsReg else "ldg_addr_ptr")
+            val = IRBuilder.load(addr_ptr, "ldg", typ=pointee_ty)
             IRRegs[dest.GetIRName(self)] = val
                 
         elif opcode == "STG":
@@ -433,7 +448,8 @@ class Lifter :
             ptr, val = uses[0], uses[1]
             addr = _get_val(ptr, "stg_addr")
             v = _get_val(val, "stg_val")
-            IRBuilder.store(v, addr)
+            addr_ptr = _as_pointer(addr, v.type, f"{ptr.GetIRName(self)}_addr_ptr" if ptr.IsReg else "stg_addr_ptr")
+            IRBuilder.store(v, addr_ptr)
 
         elif opcode == "LDS":
             dest = Inst.GetDefs()[0]
@@ -478,14 +494,6 @@ class Lifter :
             v2 = _get_val(uses[1], "fmul_rhs")
             IRRegs[dest.GetIRName(self)] = IRBuilder.fmul(v1, v2, "fmul")
 
-        elif opcode == "INTTOPTR": # psudo instruction placed by # transform/inttoptr.py
-            ptr = Inst.GetDefs()[0]
-            val = Inst.GetUses()[0]
-            v1 = _get_val(val, "inttoptr_val")
-
-            IRRegs[ptr.GetIRName(self)] = IRBuilder.inttoptr(v1, ptr.GetIRType(self), "inttoptr")
-
-
         elif opcode == "FFMA":
             raise UnsupportedInstructionException
 
@@ -493,15 +501,18 @@ class Lifter :
             dest = Inst.GetDefs()[0]
             ptr = Inst.GetUses()[0]
             addr = _get_val(ptr, "ld_addr")
-            val = IRBuilder.load(addr, "ld")
+            pointee_ty = dest.GetIRType(self)
+            addr_ptr = _as_pointer(addr, pointee_ty, f"{ptr.GetIRName(self)}_addr_ptr" if ptr.IsReg else "ld_addr_ptr")
+            val = IRBuilder.load(addr_ptr, "ld", typ=pointee_ty)
             IRRegs[dest.GetIRName(self)] = val
                 
         elif opcode == "ST":
             uses = Inst.GetUses()
             ptr, val = uses[0], uses[1]
-            addr = _get_val(ptr, "st_addr")
             v = _get_val(val, "st_val")
-            IRBuilder.store(v, addr)
+            addr = _get_val(ptr, "st_addr")
+            addr_ptr = _as_pointer(addr, v.type, f"{ptr.GetIRName(self)}_addr_ptr" if ptr.IsReg else "st_addr_ptr")
+            IRBuilder.store(v, addr_ptr)
         
         elif opcode == "LOP" or opcode == "ULOP":
             dest = Inst.GetDefs()[0]

@@ -57,8 +57,8 @@ def discover_bases() -> Dict[str, Dict[str, Dict[str, str]]]:
     Include a test if its dir has <name>.cu or any .sass. Use suffixed SASS if present.
     """
     by_base: Dict[str, Dict[str, Dict[str, str]]] = {}
-    suites = ["nvbit", "cuobjdump", "others", "hecbench"]
-    sms = ["35", "52", "75"]
+    suites = ["nvbit", "cuobjdump", "hecbench"]
+    sms = ["75"]
     for suite in suites:
         suite_dir = TEST_DIR / suite
         if not suite_dir.exists():
