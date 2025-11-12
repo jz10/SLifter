@@ -249,7 +249,13 @@ class OperAggregate(SaSSTransform):
         def MatchOperands(PatternOperands, InstOperands, Variables):
             if len(PatternOperands) == 1 and "[*]" in PatternOperands[0]:
                 PatternOperands = [PatternOperands[0].replace("[*]", str(i)) for i in range(len(InstOperands))]
-                Variables["pack_length"] = len(InstOperands)
+                pack_length = len(InstOperands)
+                if "pack_length" in Variables:
+                    # This prevents two phi having different number of operands to be matched.
+                    if Variables["pack_length"] != pack_length:
+                        return False
+                else:
+                    Variables["pack_length"] = pack_length
 
             if len(PatternOperands) > len(InstOperands):
                 return False

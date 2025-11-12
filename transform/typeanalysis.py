@@ -4,8 +4,8 @@ from collections import deque
 from sir.instruction import Instruction
 
 class TypeAnalysis(SaSSTransform):
-    def __init__(self, name):
-        super().__init__(name)
+    def __init__(self):
+        super().__init__()
 
         # operands with PROP must have the same type
         # operands with PROP_PTR must have the same type but with _PTR suffix(unused for now)

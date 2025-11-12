@@ -3,8 +3,8 @@ from sir.operand import Operand
 from sir.instruction import Instruction
 
 class SetZero(SaSSTransform):
-    def __init__(self, name):
-        super().__init__(name)
+    def __init__(self):
+        super().__init__()
 
     def apply(self, module):
         print("=== Start of SetZero ===")

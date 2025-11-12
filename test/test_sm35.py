@@ -1,9 +1,13 @@
 """
 Test suite for SM 35 architecture.
 """
-from test_utils import (
+import pytest
+
+from .test_utils import (
     get_test_bases,
-    get_bases_for_sm_suite, execute_test_case, pytest
+    get_bases_for_sm_suite,
+    execute_test_case,
+    LIFTERS,
 )
 
 SM = "35"
@@ -11,21 +15,38 @@ SM = "35"
 # Initialize test bases (identification based on cu or sass presence)
 BASES = get_test_bases()
 
-if pytest:
-    pytest.skip("SM 35 test suite disabled", allow_module_level=True)
+pytest.skip("SM 35 test suite disabled", allow_module_level=True)
 
-if pytest:
-    @pytest.mark.parametrize("base", get_bases_for_sm_suite(BASES, SM, "nvbit"), 
-                            ids=lambda b: b.split("/", 1)[1])
-    def test_nvbit(base, tmp_path):
-        execute_test_case(BASES, base, SM)
 
-    @pytest.mark.parametrize("base", get_bases_for_sm_suite(BASES, SM, "cuobjdump"), 
-                            ids=lambda b: b.split("/", 1)[1])
-    def test_cuobjdump(base, tmp_path):
-        execute_test_case(BASES, base, SM)
+def _parametrize_suite(suite: str):
+    return pytest.mark.parametrize(
+        "base",
+        get_bases_for_sm_suite(BASES, SM, suite),
+        ids=lambda b: b.split("/", 1)[1],
+    )
 
-    @pytest.mark.parametrize("base", get_bases_for_sm_suite(BASES, SM, "hecbench"), 
-                            ids=lambda b: b.split("/", 1)[1])
-    def test_hecbench(base, tmp_path):
-        execute_test_case(BASES, base, SM)
+
+@pytest.mark.parametrize("lifter", LIFTERS, ids=lambda l: l)
+@_parametrize_suite("nvbit")
+def test_nvbit(base, lifter, tmp_path):
+    execute_test_case(BASES, base, SM, lifter)
+
+
+@_parametrize_suite("cuobjdump")
+def test_cuobjdump_x86(base, tmp_path):
+    execute_test_case(BASES, base, SM, "x86")
+
+
+@_parametrize_suite("cuobjdump")
+def test_cuobjdump_nvvm(base, tmp_path):
+    execute_test_case(BASES, base, SM, "nvvm")
+
+
+@_parametrize_suite("hecbench")
+def test_hecbench_x86(base, tmp_path):
+    execute_test_case(BASES, base, SM, "x86")
+
+
+@_parametrize_suite("hecbench")
+def test_hecbench_nvvm(base, tmp_path):
+    execute_test_case(BASES, base, SM, "nvvm")

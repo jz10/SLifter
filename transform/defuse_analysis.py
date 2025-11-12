@@ -2,8 +2,8 @@ from transform.transform import SaSSTransform
 from collections import deque
 
 class DefUseAnalysis(SaSSTransform):
-    def __init__(self, name):
-        super().__init__(name)
+    def __init__(self):
+        super().__init__()
         
     def apply(self, module):
         print("=== Start of DefUseAnalysis ===")

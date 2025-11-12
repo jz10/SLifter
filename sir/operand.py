@@ -2,11 +2,20 @@ import ctypes
 
 # Special register constants
 SR_TID = 'SR_TID'
-SR_NTID = 'SR_NTID'  
+SR_NTID = 'SR_NTID'
 SR_CTAID = 'SR_CTAID'
+SR_GRID_DIM = 'SR_GRID_DIM'
 SR_LANE = 'SR_LANE'
 SR_WARP = 'SR_WARP'
+SR_WARPSIZE = 'SR_WARPSIZE'
+SR_WARPSZ = 'SR_WARPSZ'
 SR_CLOCK = 'SR_CLOCK'
+SR_EQMASK = 'SR_EQMASK'
+SR_LEMASK = 'SR_LEMASK'
+SR_LTMASK = 'SR_LTMASK'
+SR_GEMASK = 'SR_GEMASK'
+SR_GTMASK = 'SR_GTMASK'
+SR_ACTIVEMASK = 'SR_ACTIVEMASK'
 
 class InvalidOperandException(Exception):
     pass
@@ -90,7 +99,7 @@ class Operand:
             Reg = Reg[1:-1]
 
         # Check if it is a function argument or dimension related value
-        if Reg.startswith("c["):
+        if Reg.startswith("c[0x0"):
             content = Reg.replace("c[0x0][", "").replace("]", "")
             # c[0x0][0x164]:c[0x0][0x160] => use 0x160 as offset
             content = content.split(":")[-1] 
@@ -103,6 +112,12 @@ class Operand:
             offset = int(content, base = 16)
 
             return Operand.fromArg(Operand_Content, offset, Negate, Not, Abs, regName)
+        
+        # Check if it is a constant memory address
+        if Reg.startswith("c[0x3"):
+            content = Reg.replace("c[0x3][", "").replace("]", "")
+            offset = int(content, base = 16)
+            return Operand.fromArg(Operand_Content, offset, Negate, Not, Abs)
 
         # Suffix
         Suffix = None
@@ -190,24 +205,104 @@ class Operand:
 
     @property
     def IsSpecialReg(self):
-        return self.Name and (self.Name.startswith(SR_TID) or 
-                              self.Name.startswith(SR_NTID) or 
-                              self.Name.startswith(SR_CTAID) or 
-                              self.Name.startswith(SR_LANE) or 
-                              self.Name.startswith(SR_WARP) or 
-                              self.Name.startswith(SR_CLOCK))
+        return bool(self.Name and (
+            self.Name.startswith(SR_TID) or
+            self.Name.startswith(SR_NTID) or
+            self.Name.startswith(SR_CTAID) or
+            self.Name.startswith(SR_GRID_DIM) or
+            self.Name.startswith(SR_LANE) or
+            self.Name.startswith(SR_WARP) or
+            self.Name.startswith(SR_WARPSIZE) or
+            self.Name.startswith(SR_WARPSZ) or
+            self.Name.startswith(SR_CLOCK) or
+            self.Name.startswith(SR_EQMASK) or
+            self.Name.startswith(SR_LEMASK) or
+            self.Name.startswith(SR_LTMASK) or
+            self.Name.startswith(SR_GEMASK) or
+            self.Name.startswith(SR_GTMASK) or
+            self.Name.startswith(SR_ACTIVEMASK)
+        ))
+
+    @property
+    def SpecialRegisterAxis(self):
+        if not (self.IsSpecialReg and self.Name):
+            return None
+        if '.' not in self.Name:
+            return None
+        return self.Name.split('.', 1)[1].split('.', 1)[0].upper()
+
+    def _matches_axis(self, prefix, axis):
+        if not (self.Name and self.Name.startswith(prefix)):
+            return False
+        component = self.SpecialRegisterAxis
+        if component is None:
+            # Axisless variants default to X for legacy encodings.
+            return axis == "X"
+        return component == axis
 
     @property
     def IsThreadIdx(self):
         return self.Name and self.Name.startswith(SR_TID)
     
     @property
+    def IsThreadIdxX(self):
+        return self._matches_axis(SR_TID, "X")
+
+    @property
+    def IsThreadIdxY(self):
+        return self._matches_axis(SR_TID, "Y")
+
+    @property
+    def IsThreadIdxZ(self):
+        return self._matches_axis(SR_TID, "Z")
+    
+    @property
     def IsBlockDim(self):
         return self.Name and self.Name.startswith(SR_NTID)
+
+    @property
+    def IsBlockDimX(self):
+        return self._matches_axis(SR_NTID, "X")
+
+    @property
+    def IsBlockDimY(self):
+        return self._matches_axis(SR_NTID, "Y")
+
+    @property
+    def IsBlockDimZ(self):
+        return self._matches_axis(SR_NTID, "Z")
     
     @property
     def IsBlockIdx(self):
         return self.Name and self.Name.startswith(SR_CTAID)
+
+    @property
+    def IsBlockIdxX(self):
+        return self._matches_axis(SR_CTAID, "X")
+
+    @property
+    def IsBlockIdxY(self):
+        return self._matches_axis(SR_CTAID, "Y")
+
+    @property
+    def IsBlockIdxZ(self):
+        return self._matches_axis(SR_CTAID, "Z")
+
+    @property
+    def IsGridDim(self):
+        return self.Name and self.Name.startswith(SR_GRID_DIM)
+
+    @property
+    def IsGridDimX(self):
+        return self._matches_axis(SR_GRID_DIM, "X")
+
+    @property
+    def IsGridDimY(self):
+        return self._matches_axis(SR_GRID_DIM, "Y")
+
+    @property
+    def IsGridDimZ(self):
+        return self._matches_axis(SR_GRID_DIM, "Z")
     
     @property
     def IsLaneId(self):
@@ -216,6 +311,36 @@ class Operand:
     @property
     def IsWarpId(self):
         return self.Name and self.Name.startswith(SR_WARP)
+
+    @property
+    def IsWarpSize(self):
+        return self.Name and (
+            self.Name.startswith(SR_WARPSIZE) or self.Name.startswith(SR_WARPSZ)
+        )
+
+    @property
+    def IsLaneMaskEQ(self):
+        return self.Name and self.Name.startswith(SR_EQMASK)
+
+    @property
+    def IsLaneMaskLE(self):
+        return self.Name and self.Name.startswith(SR_LEMASK)
+
+    @property
+    def IsLaneMaskLT(self):
+        return self.Name and self.Name.startswith(SR_LTMASK)
+
+    @property
+    def IsLaneMaskGE(self):
+        return self.Name and self.Name.startswith(SR_GEMASK)
+
+    @property
+    def IsLaneMaskGT(self):
+        return self.Name and self.Name.startswith(SR_GTMASK)
+
+    @property
+    def IsActiveMask(self):
+        return self.Name and self.Name.startswith(SR_ACTIVEMASK)
 
     @property
     def IsRZ(self):

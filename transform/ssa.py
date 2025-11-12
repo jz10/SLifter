@@ -12,7 +12,7 @@ class SSA(SaSSTransform):
         print("=== Start of SSA ===")
 
         # Build def-use for potential downstream consumers
-        defuse = DefUseAnalysis("def-use analysis for SSA")
+        defuse = DefUseAnalysis()
         defuse.apply(module)
 
         for func in module.functions:
