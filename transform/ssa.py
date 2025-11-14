@@ -69,12 +69,12 @@ class SSA(SaSSTransform):
         return var in skip_set
 
     def createPhiNode(self, reg, block):
-        dest_op = Operand(reg, reg, None, None, True, False, False)
+        dest_op = Operand.fromReg(reg, reg)
 
         operands = [dest_op]
         # Allocate one incoming operand per predecessor (will be filled in rename)
         for _ in block._preds:
-            src_op = Operand(reg, reg, None, None, True, False, False)
+            src_op = Operand.fromReg(reg, reg)
             operands.append(src_op)
 
         phi = Instruction(

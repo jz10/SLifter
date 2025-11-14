@@ -123,9 +123,10 @@ class NVVMLifter(Lifter):
         self._nvvm_brev64 = declare_nvvm("llvm.nvvm.brev64", self.ir.IntType(64), [self.ir.IntType(64)])
         self._nvvm_prmt = declare_nvvm("llvm.nvvm.prmt", i32, [i32, i32, i32])
 
-        # # Constant, shared, and local memories in proper NVVM address spaces
-        ConstArrayTy = self.ir.ArrayType(self.ir.IntType(8), 4096)
-        self.ConstMem = self.ir.GlobalVariable(llvm_module, ConstArrayTy, "const_mem")
+        # Constant, shared, and local memories in proper NVVM address spaces
+        BankTy = self.ir.ArrayType(self.ir.IntType(8), 4096)
+        ConstMemTy  = self.ir.ArrayType(BankTy, 5)
+        self.ConstMem = self.ir.GlobalVariable(llvm_module, ConstMemTy, "const_mem")
         self.ConstMem.address_space = 4
         self.ConstMem.global_constant = True
 
@@ -152,9 +153,13 @@ class NVVMLifter(Lifter):
         AbsFunc = self.ir.Function(llvm_module, FuncTy, "abs")
         self.DeviceFuncs["abs"] = AbsFunc
 
+        FuncTy = self.ir.FunctionType(self.ir.FloatType(), [self.ir.FloatType()], False)
+        FabsFunc = self.ir.Function(llvm_module, FuncTy, "fabs")
+        self.DeviceFuncs["fabs"] = FabsFunc
+
 
     def _lift_function(self, func, llvm_module):
-        args = func.GetArgs(self)
+        args = [arg for arg in func.GetArgs(self) if arg.IsArg]
 
         param_types = [self.GetIRType(arg.TypeDesc) for arg in args]
         func_ty = self.ir.FunctionType(self.ir.VoidType(), param_types, False)
@@ -164,12 +169,12 @@ class NVVMLifter(Lifter):
         func.BlockMap = {}
         func.BuildBBToIRMap(ir_function, func.BlockMap)
 
-        const_mem = {}
+        ArgsMap = {}
         for idx, entry in enumerate(args):
             arg_name = entry.GetIRName(self)
             ir_arg = ir_function.args[idx]
             ir_arg.name = arg_name
-            const_mem[arg_name] = ir_arg
+            ArgsMap[arg_name] = ir_arg
 
         entry_block = func.BlockMap[func.blocks[0]]
         builder = self.ir.IRBuilder(entry_block)
@@ -180,15 +185,15 @@ class NVVMLifter(Lifter):
         for bb in func.blocks:
             ir_block = func.BlockMap[bb]
             builder = self.ir.IRBuilder(ir_block)
-            self._lift_basic_block(bb, builder, ir_regs, func.BlockMap, const_mem)
+            self._lift_basic_block(bb, builder, ir_regs, func.BlockMap, ArgsMap)
 
         for bb in func.blocks:
             builder = self.ir.IRBuilder(func.BlockMap[bb])
             self._populate_phi_nodes(bb, builder, ir_regs, func.BlockMap)
 
-    def _lift_basic_block(self, bb, builder, ir_regs, block_map, const_mem):
+    def _lift_basic_block(self, bb, builder, ir_regs, block_map, ArgsMap):
         for inst in bb.instructions:
-            self.lift_instruction(inst, builder, ir_regs, const_mem, block_map)
+            self.lift_instruction(inst, builder, ir_regs, ArgsMap, block_map)
 
     def _populate_phi_nodes(self, bb, builder, ir_regs, block_map):
         ir_block = block_map[bb]
@@ -272,7 +277,7 @@ class NVVMLifter(Lifter):
             print("Warning: failed to add nvvm.annotations metadata:", e)
 
 
-    def lift_instruction(self, Inst, IRBuilder: ir.IRBuilder, IRRegs, ConstMem, BlockMap):
+    def lift_instruction(self, Inst, IRBuilder: ir.IRBuilder, IRRegs, ArgsMap, BlockMap):
         if len(Inst._opcodes) == 0:
             raise UnsupportedInstructionException("Empty opcode list")
         opcode = Inst._opcodes[0]
@@ -308,11 +313,34 @@ class NVVMLifter(Lifter):
                 if op.IsNotReg:
                     val = IRBuilder.not_(val, f"{name}_not")
                 if op.IsAbsReg:
-                    val = IRBuilder.call(self.DeviceFuncs["abs"], [val], f"{name}_abs")
+                    if op.GetTypeDesc().startswith('F'):
+                        val = IRBuilder.call(self.DeviceFuncs["fabs"], [val], f"{name}_fabs")
+                    else:
+                        val = IRBuilder.call(self.DeviceFuncs["abs"], [val], f"{name}_abs")
                 return val
             if op.IsArg:
-                    return ConstMem[op.GetIRName(self)]
+                return ArgsMap[op.GetIRName(self)]
             if op.IsImmediate:
+                return self.ir.Constant(op.GetIRType(self), op.ImmediateValue)
+            if op.IsConstMem and not op.IsArg:
+                bank = op.ConstMemBank
+                offset = op.OffsetOrImm
+                zero = self.ir.Constant(self.ir.IntType(32), 0)
+                bank_idx = self.ir.Constant(self.ir.IntType(32), bank)
+                offset_idx = self.ir.Constant(self.ir.IntType(32), int(offset))
+                ptr = IRBuilder.gep(
+                    self.ConstMem,
+                    [zero, bank_idx, offset_idx],
+                    f"{name}_cmem_gep" if name else "const_mem_gep",
+                )
+                typed_ptr = IRBuilder.bitcast(
+                    ptr,
+                    self.ir.PointerType(op.GetIRType(self), 4),
+                    f"{name}_cmem_ptr" if name else "const_mem_ptr",
+                )
+                load_name = f"{name}_cmem_load" if name else "const_mem_load"
+                return IRBuilder.load(typed_ptr, load_name)
+            if op.IsMemAddr and not op.IsReg: # E.g. LDS.U R2 = [0xc]
                 return self.ir.Constant(op.GetIRType(self), op.ImmediateValue)
             raise UnsupportedInstructionException(f"Unsupported operand type: {op}")
 
@@ -389,6 +417,65 @@ class NVVMLifter(Lifter):
             tmp = IRBuilder.fmul(v1, v2, "ffma_tmp")
             tmp = IRBuilder.fadd(tmp, v3, "ffma")
             IRRegs[dest.GetIRName(self)] = tmp
+            
+        elif opcode == "FMUL":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "fmul_lhs")
+            v2 = _get_val(uses[1], "fmul_rhs")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.fmul(v1, v2, "fmul")
+            
+        elif opcode == "FMNMX":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "fmnmx_lhs")
+            v2 = _get_val(uses[1], "fmnmx_rhs")
+            pred = Inst.GetUses()[2]
+            if pred.IsPT:
+                r = IRBuilder.fcmp_ordered("<", v1, v2, "fmnmx")
+                IRRegs[dest.GetIRName(self)] = IRBuilder.select(r, v1, v2, "fmnmx_select")
+            else:
+                r = IRBuilder.fcmp_unordered(">", v1, v2, "fmnmx")
+                IRRegs[dest.GetIRName(self)] = IRBuilder.select(r, v1, v2, "fmnmx_select")
+            
+        elif opcode == "FCHK":
+            # Checks for various special values, nan, inf, etc
+            # Create a device function for it
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "fchk_val")
+            chk_type = uses[1]
+            
+            func_name = "fchk"
+            if func_name not in self.DeviceFuncs:
+                func_ty = ir.FunctionType(ir.IntType(1), [ir.FloatType(), ir.IntType(32)], False)
+                self.DeviceFuncs[func_name] = ir.Function(IRBuilder.module, func_ty, func_name)
+                
+            IRRegs[dest.GetIRName(self)] = IRBuilder.call(self.DeviceFuncs[func_name], [v1, _get_val(chk_type, "fchk_type")], "fchk_call")
+            
+        elif opcode == "DADD":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "dadd_lhs")
+            v2 = _get_val(uses[1], "dadd_rhs")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.fadd(v1, v2, "dadd")
+            
+        elif opcode == "DFMA":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "dfma_lhs")
+            v2 = _get_val(uses[1], "dfma_rhs")
+            v3 = _get_val(uses[2], "dfma_addend")
+            tmp = IRBuilder.fmul(v1, v2, "dfma_tmp")
+            tmp = IRBuilder.fadd(tmp, v3, "dfma")
+            IRRegs[dest.GetIRName(self)] = tmp
+            
+        elif opcode == "DMUL":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "dmul_lhs")
+            v2 = _get_val(uses[1], "dmul_rhs")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.fmul(v1, v2, "dmul")
 
         elif opcode == "ISCADD":
             dest = Inst.GetDefs()[0]
@@ -757,19 +844,62 @@ class NVVMLifter(Lifter):
             else:
                 val = IRBuilder.sitofp(v1, dest.GetIRType(self), "i2f")
             IRRegs[dest.GetIRName(self)] = val
+            
+        elif opcode == "F2F":
+            dest = Inst.GetDefs()[0]
+            op1 = Inst.GetUses()[0]
+            
+            src_type = Inst.opcodes[1]
+            dest_type = Inst.opcodes[2]
+            
+            src_width = int(src_type[1:])
+            dest_width = int(dest_type[1:])
+
+            v1 = _get_val(op1, "f2f_src")
+            if src_width < dest_width:            
+                IRRegs[dest.GetIRName(self)] = IRBuilder.fpext(
+                    v1, dest.GetIRType(self), "f2f_ext"
+                )
+            elif src_width > dest_width:
+                IRRegs[dest.GetIRName(self)] = IRBuilder.fptrunc(
+                    v1, dest.GetIRType(self), "f2f_trunc"
+                )
+            else:
+                # impossible
+                raise UnsupportedInstructionException()
                     
         elif opcode == "MUFU":
             dest = Inst.GetDefs()[0]
             src = Inst.GetUses()[0]
-            func = Inst._opcodes[1] if len(Inst._opcodes) > 1 else None
+            func = Inst._opcodes[1]
             v = _get_val(src, "mufu_src")
 
-            if func == "RCP": # 1/v
-                one = self.ir.Constant(dest.GetIRType(self), 1.0)
-                res = IRBuilder.fdiv(one, v, "mufu_rcp")
-                IRRegs[dest.GetIRName(self)] = res
+            intrinsic_name = None
+            if func == "RCP":
+                intrinsic_name = "llvm.nvvm.rcp.approx.f"
+            elif func == "RSQ":
+                intrinsic_name = "llvm.nvvm.rsqrt.approx.f"
+            elif func == "SQRT":
+                intrinsic_name = "llvm.sqrt.f32"
+            elif func == "SIN":
+                intrinsic_name = "llvm.nvvm.sin.approx.f"
+            elif func == "COS":
+                intrinsic_name = "llvm.nvvm.cos.approx.f"
+            elif func == "EX2":
+                intrinsic_name = "llvm.nvvm.ex2.approx.f"
+            elif func == "LG2":
+                intrinsic_name = "llvm.nvvm.lg2.approx.f"
             else:
                 raise UnsupportedInstructionException
+
+            intrinsic = self.DeviceFuncs.get(intrinsic_name)
+            if intrinsic is None:
+                func_ty = self.ir.FunctionType(self.ir.FloatType(), [self.ir.FloatType()])
+                intrinsic = self.ir.Function(IRBuilder.module, func_ty, intrinsic_name)
+                self.DeviceFuncs[intrinsic_name] = intrinsic
+
+            res = IRBuilder.call(intrinsic, [v], f"mufu_{func.lower()}")
+            IRRegs[dest.GetIRName(self)] = res
                     
         elif opcode == "IABS":
             dest = Inst.GetDefs()[0]
@@ -978,36 +1108,110 @@ class NVVMLifter(Lifter):
                     IRBuilder.store(IRVal, IRRegs[dest_name])
                 else:
                     IRRegs[dest_name] = IRVal
+                    
+        elif opcode == "FSETP" or opcode == "DSETP":
+            dest1 = Inst.GetDefs()[0]
+            dest2 = Inst.GetDefs()[1]
+            a, b = Inst.GetUses()[0], Inst.GetUses()[1]
+            src = Inst.GetUses()[2]
+            
+            val1 = _get_val(a, "fsetrp_lhs")
+            val2 = _get_val(b, "fsetrp_rhs")
+            val3 = _get_val(src, "fsetrp_src")
+            
+            cmp1 = Inst.opcodes[1]
+            cmp2 = Inst.opcodes[2]
+            
+            isUnordered = "U" in cmp1
+            
+            funcs_map = {
+                "EQ": "==",
+                "NE": "!=",
+                "LT": "<",
+                "LE": "<=",
+                "GT": ">",
+                "GE": ">=",
+                "NEU": "!=",
+                "LTU": "<",
+                "LEU": "<=",
+                "GTU": ">",
+                "GEU": ">=",
+            }
+            
+            cmp2_map = {
+                "AND": IRBuilder.and_,
+                "OR": IRBuilder.or_,
+                "XOR": IRBuilder.xor
+            }
+            
+            if isUnordered:
+                r = IRBuilder.fcmp_unordered(funcs_map[cmp1], val1, val2, "fsetrp_cmp1")
+            else:
+                r = IRBuilder.fcmp_ordered(funcs_map[cmp1], val1, val2, "fsetrp_cmp1")
+                
+            cmp2_func = cmp2_map.get(cmp2)
+            if not cmp2_func:
+                raise UnsupportedInstructionException
+            
+            r1 = cmp2_func(r, val3, "fsetrp_cmp2")
+            
+            if not dest1.IsPT:
+                IRRegs[dest1.GetIRName(self)] = r1
+                
+            if not dest2.IsPT:
+                r2 = IRBuilder.not_(r1, "fsetrp_not")
+                IRRegs[dest2.GetIRName(self)] = r2
 
-        elif opcode == "ISETP" or opcode == "ISETP64" or opcode == "FSETP" or opcode == "UISETP":
-            uses = Inst.GetUses()
-            # Some encodings include a leading PT predicate use; skip it
-            start_idx = 1 if len(uses) > 0 and getattr(uses[0], 'IsPT', False) else 0
-            r = _get_val(uses[start_idx], "branch_operand_0")
-
-            # Remove U32 from opcodes
-            # Currently just assuming every int are signed. May be dangerous?  
-            opcodes = [opcode for opcode in Inst._opcodes if opcode != "U32"]
-            isUnsigned = "U32" in Inst._opcodes
-
-            for i in range(1, len(opcodes)):
-                temp = _get_val(uses[start_idx + i], f"branch_operand_{i}")
-                if opcodes[i] == "AND":
-                    r = IRBuilder.and_(r, temp, f"branch_and_{i}")
-                elif opcodes[i] == "OR":
-                    r = IRBuilder.or_(r, temp, f"branch_or_{i}")
-                elif opcodes[i] == "XOR":
-                    r = IRBuilder.xor(r, temp, f"branch_xor_{i}")
-                elif opcodes[i] == "EX":
-                    pass #TODO:?
-                else:
-                    if isUnsigned:
-                        r = IRBuilder.icmp_unsigned(self.GetCmpOp(opcodes[i]), r, temp, f"branch_cmp_{i}")
-                    else:
-                        r = IRBuilder.icmp_signed(self.GetCmpOp(opcodes[i]), r, temp, f"branch_cmp_{i}")
-
-            pred = Inst.GetDefs()[0]
-            IRRegs[pred.GetIRName(self)] = r
+        elif opcode == "ISETP" or opcode == "ISETP64" or opcode == "UISETP":
+            dest1 = Inst.GetDefs()[0]
+            dest2 = Inst.GetDefs()[1]
+            a, b = Inst.GetUses()[0], Inst.GetUses()[1]
+            src = Inst.GetUses()[2]
+            
+            val1 = _get_val(a, "isetrp_lhs")
+            val2 = _get_val(b, "isetrp_rhs")
+            val3 = _get_val(src, "isetrp_src")
+            
+            cmp1 = Inst.opcodes[1]
+            if "U" in Inst.opcodes[2]:
+                isUnsigned = True
+                cmp2 = Inst.opcodes[3]
+            else:
+                isUnsigned = False
+                cmp2 = Inst.opcodes[2]
+            
+            funcs_map = {
+                "EQ": "==",
+                "NE": "!=",
+                "LT": "<",
+                "LE": "<=",
+                "GT": ">",
+                "GE": ">=",
+            }
+            
+            cmp2_map = {
+                "AND": IRBuilder.and_,
+                "OR": IRBuilder.or_,
+                "XOR": IRBuilder.xor
+            }
+            
+            if isUnsigned:
+                r = IRBuilder.icmp_unsigned(funcs_map[cmp1], val1, val2, "isetrp_cmp1")
+            else:
+                r = IRBuilder.icmp_signed(funcs_map[cmp1], val1, val2, "isetrp_cmp1")
+                
+            cmp2_func = cmp2_map.get(cmp2)
+            if not cmp2_func:
+                raise UnsupportedInstructionException
+            
+            r1 = cmp2_func(r, val3, "isetrp_cmp2")
+            
+            if not dest1.IsPT:
+                IRRegs[dest1.GetIRName(self)] = r1
+                
+            if not dest2.IsPT:
+                r2 = IRBuilder.not_(r1, "isetrp_not")
+                IRRegs[dest2.GetIRName(self)] = r2
 
         elif opcode == "PBRA":
             pred = Inst.GetUses()[0]
@@ -1557,6 +1761,10 @@ class NVVMLifter(Lifter):
             return self.ir.IntType(64)
         elif TypeDesc == "Int64_PTR":
             return self.ir.PointerType(self.ir.IntType(64), 1)
+        elif TypeDesc == "Float64":
+            return self.ir.DoubleType()
+        elif TypeDesc == "Float64_PTR":
+            return self.ir.PointerType(self.ir.DoubleType(), 1)
         elif TypeDesc == "Int1":
             return self.ir.IntType(1)
         elif TypeDesc == "PTR":

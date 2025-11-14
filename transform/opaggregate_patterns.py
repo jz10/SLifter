@@ -132,6 +132,25 @@ PatternTable = {
             "next": [("reg_low[*]", "reg_high[*]")],
         }
     ],
+    ("UIMAD",): [
+        {
+            "in": [
+                {
+                    "opcodes": ["UIMAD", "WIDE"],
+                    "def": ["reg1", "reg2"],
+                    "use": ["reg3", "op4", "op5"],
+                },
+            ],
+            "out": [
+                {
+                    "opcodes": ["IMAD64"],
+                    "def": ["reg2:reg1"],
+                    "use": ["reg3", "op4", "op5"],
+                }
+            ],
+            "next": [("reg1", "reg2")],
+        },
+    ],
     ("IMAD",): [
         {
             "in": [

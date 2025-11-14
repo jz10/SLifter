@@ -142,8 +142,7 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
     sass_rel = entry.get("sass_rel", "")
     hosts = entry.get("hosts", {})
     lifter = lifter.lower()
-    host_rel = hosts.get(lifter, "")
-    
+
     clean_paths: List[Path] = []
     temp_dirs: List[Path] = []
 
@@ -270,8 +269,11 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
     # Track generated build artifacts to remove even if the test fails
     kernel_wrapper_variant = TEST_DIR / "common" / f"kernel_wrapper_{sm}.h"
     wrapper_include_dir: Optional[Path] = None
+
     #clean_paths: List[Path] = []
     #temp_dirs: List[Path] = []
+
+    #clean_paths: List[Path] = []
 
     try:
         # 1) lift to LLVM

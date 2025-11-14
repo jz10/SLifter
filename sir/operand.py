@@ -1,5 +1,3 @@
-import ctypes
-
 # Special register constants
 SR_TID = 'SR_TID'
 SR_NTID = 'SR_NTID'
@@ -25,150 +23,221 @@ class Operand:
     @classmethod
     def Parse(cls, Operand_Content):
         Operand_Content = Operand_Content.lstrip()
-
-        # Check if it is an immediate value
-        if Operand_Content.startswith('0x') or Operand_Content.startswith('-0x'):
-            # Convert to integer, handle pairs as well
-            # E.g. -0x1:-0x1=>-0x1, 0x0:0xFF=>0xFF
-            ValueStrs = Operand_Content.split(":")
-            if len(ValueStrs) == 2:
-                ImmediateValue = ((int(ValueStrs[1], 0) & 0xFFFFFFFF) << 32) | (int(ValueStrs[0], 0) & 0xFFFFFFFF)
-                ImmediateValue = ctypes.c_int64(ImmediateValue).value
-            else:
-                ImmediateValue = int(ValueStrs[0], 0)
-            Name = Operand_Content
-            return Operand.fromImmediate(Name, ImmediateValue)
-        else:
-            # Try to parse as a floating-point number
-            try:
-                ImmediateValue = float(Operand_Content)
-                Name = Operand_Content
-                return Operand.fromImmediate(Name, ImmediateValue)
-            except ValueError:
-                pass
-
-        # Check if it is a register for address pointer, e.g. [R0]
-        if Operand_Content.startswith('[') and Operand_Content.endswith(']'):
-            content = Operand_Content[1:-1]
-
-            suffix = None
-            if ".X4" in content:
-                content = content.replace(".X4", "")
-                suffix = "X4"
-
-            if '+' in content:
-                items = content.split('+')
-                reg = items[0]
-
-                uRegOffset = None
-                offset = 0
-                if len(items) == 3:
-                    uRegOffset = Operand.fromReg(items[2], items[2])
-                    offset = int(items[1], base = 16)
-
-                if len(items) == 2:
-                    if "UR" in items[1]:
-                        uRegOffset = Operand.fromReg(items[1], items[1])
-                    else:
-                        offset = int(items[1], base = 16)
-
-                if '.' in reg:
-                    suffix = reg.split('.')[1]
-                    reg = reg.split('.')[0]
-
-                return Operand.fromMemAddr(Operand_Content, reg, suffix, offset, uRegOffset)
-            elif '-' in content:
-                items = content.split('-')
-                reg = items[0]
-                offset = -int(items[1], base = 16)
-                return Operand.fromMemAddr(Operand_Content, reg, suffix, offset)
-            else:
-                reg = content
-                return Operand.fromMemAddr(Operand_Content, reg, suffix, 0)
-
-        Reg = Operand_Content
-        Name = Operand_Content
-
-        # Check for register prefix, including -, ~, or abs '|'
-        Negate = Operand_Content.startswith('-')
-        Not = Operand_Content.startswith('~') or Operand_Content.startswith('!')
-        Abs = Operand_Content.startswith('|') and Operand_Content.endswith('|')
-        if Negate or Not:
-            Reg = Reg[1:]
-        if Abs:
-            Reg = Reg[1:-1]
-
-        # Check if it is a function argument or dimension related value
-        if Reg.startswith("c[0x0"):
-            content = Reg.replace("c[0x0][", "").replace("]", "")
-            # c[0x0][0x164]:c[0x0][0x160] => use 0x160 as offset
-            content = content.split(":")[-1] 
-            
-            # c[0x0][R0+0x160]
-            regName = None
-            if '+' in content:
-                regName, content = content.split('+')
-                
-            offset = int(content, base = 16)
-
-            return Operand.fromArg(Operand_Content, offset, Negate, Not, Abs, regName)
         
-        # Check if it is a constant memory address
-        if Reg.startswith("c[0x3"):
-            content = Reg.replace("c[0x3][", "").replace("]", "")
-            offset = int(content, base = 16)
-            return Operand.fromArg(Operand_Content, offset, Negate, Not, Abs)
-
-        # Suffix
+        Name = Operand_Content
+        RegName = None
+        IsReg = False
+        IsConstMem = False
+        IsMemAddr = False
+        IsImmediate = False
+        Prefix = None
         Suffix = None
-        if not Reg.startswith('SR'):
-            Suffix = Reg.split('.')[-1] if '.' in Reg else None
-            if Suffix:
-                Reg = Reg[:-(len(Suffix) + 1)]
+        OffsetOrImm = None
+        IndexReg = None
+        ConstMemBank = None
+        
+        # For operator aggregation pass, if A:B is given, only parse B 
+        if ':' in Operand_Content:
+            Operand_Content = Operand_Content.split(':')[1]
+        
+        if Operand_Content.startswith('-'):
+            Prefix = '-'
+            Operand_Content = Operand_Content[1:]
+        elif Operand_Content.startswith('!'):
+            Prefix = '!'
+            Operand_Content = Operand_Content[1:]
+        elif Operand_Content.startswith('~'):
+            Prefix = '~'
+            Operand_Content = Operand_Content[1:]
+        elif Operand_Content.startswith('|'):
+            Prefix = '|'
+            Operand_Content = Operand_Content[1:-1]
+        
+        if Operand_Content.startswith('c['):
+            ConstMemBank = int(Operand_Content[2:5], 16)
+            Operand_Content = Operand_Content[7:-1]
+            IsConstMem = True
+            
+        if Operand_Content.startswith('['):
+            Operand_Content = Operand_Content[1:-1]
+            IsMemAddr = True
 
-        return Operand.fromReg(Name, Reg, Suffix, Negate, Not, Abs)
+        SubOps = Operand_Content.split('+')
+        for SubOperand in SubOps:
+            # Suboperand is an immediate(offset)
+            if not ("R" in SubOperand or "P" in SubOperand):
+                if "0x" in SubOperand:
+                    OffsetOrImm = int(SubOperand, 16)
+                else: # Try match as decimal
+                    try:
+                        OffsetOrImm = float(SubOperand)
+                    except ValueError:
+                        pass
+                continue
+            
+            # Otherwise suboperand is a register
+            IsReg = True
+            
+            # Match prefix(-, !, ||)
+            if SubOperand.startswith('-'):
+                Prefix = '-'
+                SubOperand = SubOperand[1:]
+            elif SubOperand.startswith('!'):
+                Prefix = '!'
+                SubOperand = SubOperand[1:]
+            elif SubOperand.startswith('~'):
+                Prefix = '~'
+                SubOperand = SubOperand[1:]
+            elif SubOperand.startswith('|'):
+                Prefix = '|'
+                SubOperand = SubOperand[1:-1]
+            
+            # Match suffix(.reuse, .H1, .X4)
+            if '.' in SubOperand:
+                Suffix, SubOperand = SubOperand.split('.', 1)
+            
+            if RegName is not None:
+                IndexReg = SubOperand
+            else:
+                RegName = SubOperand
+                
+        if OffsetOrImm is not None and not IsReg and not IsMemAddr and not IsConstMem:
+            IsImmediate = True
+                    
+        return Operand(Name, RegName, IsReg, IsMemAddr, IsConstMem, Prefix, Suffix, OffsetOrImm, IndexReg, ConstMemBank, IsImmediate)
+            
 
     @classmethod
     def fromImmediate(cls, name, value):
-        return cls(Name=name, Reg=None, Suffix=None, ArgOffset=None, IsReg=False, IsArg=False, IsMemAddr=False, IsImmediate=True, ImmediateValue=value)
+        return cls(
+            Name=name,
+            Reg=None,
+            IsReg=False,
+            IsMemAddr=False,
+            IsConstMem=False,
+            Prefix=None,
+            Suffix=None,
+            OffsetOrImm=value,
+            IndexReg=None,
+            ConstMemBank=None,
+            IsImmediate=True,
+        )
 
     @classmethod
-    def fromArg(cls, name, arg_offset, negate, not_, abs, regName=None):
-        return cls(Name=name, Reg=regName, Suffix=None, ArgOffset=arg_offset, IsReg=False, IsArg=True, IsMemAddr=False, Negate=negate, Not=not_, Abs=abs)
+    def fromArg(cls, name, arg_offset, regName=None, prefix=None):
+        return cls(
+            Name=name,
+            Reg=regName,
+            IsReg=False,
+            IsMemAddr=False,
+            IsConstMem=True,
+            Prefix=prefix,
+            Suffix=None,
+            OffsetOrImm=arg_offset,
+            IndexReg=None,
+            ConstMemBank=0,
+            IsImmediate=False,
+        )
 
     @classmethod
-    def fromMemAddr(cls, name, reg, suffix, offset = 0, uregOffset = None):
-        return cls(Name=name, Reg=reg, Suffix=suffix, ArgOffset=offset, IsReg=True, IsArg=False, IsMemAddr=True, URegOffset=uregOffset)
+    def fromMemAddr(cls, name, reg, suffix=None, offset=0, indexReg=None):
+        return cls(
+            Name=name,
+            Reg=reg,
+            IsReg=True,
+            IsMemAddr=True,
+            IsConstMem=False,
+            Prefix=None,
+            Suffix=suffix,
+            OffsetOrImm=offset,
+            IndexReg=indexReg,
+            ConstMemBank=None,
+            IsImmediate=False,
+        )
 
     @classmethod
-    def fromReg(cls, name, reg, suffix = None, negate=False, not_=False, abs=False):
-        return cls(Name=name, Reg=reg, Suffix=suffix, ArgOffset=None, IsReg=True, IsArg=False, IsMemAddr=False, IsImmediate=False, ImmediateValue=None, Negate=negate, Not=not_, Abs=abs)
+    def fromReg(cls, name, reg, suffix=None, prefix=None):
+        return cls(
+            Name=name,
+            Reg=reg,
+            IsReg=True,
+            IsMemAddr=False,
+            IsConstMem=False,
+            Prefix=prefix,
+            Suffix=suffix,
+            OffsetOrImm=None,
+            IndexReg=None,
+            ConstMemBank=None,
+            IsImmediate=False,
+        )
 
-    def __init__(self, Name, Reg, Suffix, ArgOffset, IsReg, IsArg, IsMemAddr, IsImmediate=False, ImmediateValue=None, Negate=False, Not=False, Abs=False, URegOffset=None):
+    def __init__(self, Name, Reg, IsReg, IsMemAddr, IsConstMem, Prefix=None, Suffix=None, OffsetOrImm=None, IndexReg=None, ConstMemBank=None, IsImmediate=False):
         self.Name = Name
         self.Reg = Reg
-        self.Suffix = Suffix
-        self.ArgOffset = ArgOffset if IsArg else None
         self.IsReg = IsReg
-        self.IsArg = IsArg
         self.IsMemAddr = IsMemAddr
-        self.IsImmediate = IsImmediate
-        self.ImmediateValue = ImmediateValue
-        self.MemAddrOffset = ArgOffset if IsMemAddr else None
-        self.URegOffset = URegOffset
+        self.IsConstMem = bool(IsConstMem)
+        self.Prefix = Prefix
+        self.Suffix = Suffix
+        self.OffsetOrImm = OffsetOrImm
+        self.IndexReg = IndexReg
+        self.ConstMemBank = ConstMemBank
+        self.IsImmediate = bool(IsImmediate)
         self.Skipped = False
-        self.IsNegativeReg = Negate
-        self.IsNotReg = Not
-        self.IsAbsReg = Abs
         self.TypeDesc = "NOTYPE"
         self.IRType = None
         self.IRRegName = None
-        self.IsFloatImmediate = "0x" not in Name if IsImmediate else False
         self.DefiningInsts = set()
+    @property
+    def IsArg(self):
+        return bool(self.IsConstMem and self.ConstMemBank == 0)
 
     @property
-    def IsConstMem(self):
-        return self.ArgOffset is not None
+    def ArgOffset(self):
+        return self.OffsetOrImm if self.IsArg else None
+
+    @property
+    def MemAddrOffset(self):
+        return self.OffsetOrImm if self.IsMemAddr else None
+
+    @property
+    def ImmediateValue(self):
+        return self.OffsetOrImm if self.IsImmediate else None
+
+    @ImmediateValue.setter
+    def ImmediateValue(self, value):
+        self.OffsetOrImm = value
+        self.IsImmediate = value is not None
+
+    @property
+    def Immediate(self):
+        return self.ImmediateValue
+
+    @Immediate.setter
+    def Immediate(self, value):
+        self.ImmediateValue = value
+
+    @property
+    def Offset(self):
+        if self.IsMemAddr or self.IsConstMem:
+            return self.OffsetOrImm
+        return None
+
+    @property
+    def IsFloatImmediate(self):
+        return bool(self.IsImmediate and self.Name and "0x" not in self.Name.lower())
+
+    @property
+    def IsNegativeReg(self):
+        return self.Prefix == '-'
+
+    @property
+    def IsNotReg(self):
+        return self.Prefix in ('!', '~')
+
+    @property
+    def IsAbsReg(self):
+        return self.Prefix == '|'
 
     @property
     def IsPredicateReg(self):
@@ -352,15 +421,25 @@ class Operand:
     
     def __str__(self):
         if self.IsMemAddr:
-            reg_text = self.Reg
-            if self.Suffix:
-                reg_text = f"{self.Reg}.{self.Suffix}"
-            if self.URegOffset:
-                reg_text = f"{reg_text}+{self.URegOffset}"
-            if self.MemAddrOffset:
-                return f"[{reg_text}+0x{self.MemAddrOffset:x}]"
-            else:
-                return f"[{reg_text}]"
+            inner = ""
+            if self.Reg:
+                reg_text = self.Reg
+                if self.Suffix:
+                    reg_text = f"{reg_text}.{self.Suffix}"
+                inner = reg_text
+            if self.IndexReg:
+                inner = f"{inner}+{self.IndexReg}" if inner else self.IndexReg
+            if self.MemAddrOffset is not None:
+                if isinstance(self.MemAddrOffset, str):
+                    inner = f"{inner}+{self.MemAddrOffset}" if inner else self.MemAddrOffset
+                else:
+                    offset = int(self.MemAddrOffset)
+                    abs_hex = f"0x{abs(offset):x}"
+                    if offset < 0:
+                        inner = f"{inner}-{abs_hex}" if inner else f"-{abs_hex}"
+                    else:
+                        inner = f"{inner}+{abs_hex}" if inner else abs_hex
+            return f"[{inner}]" if inner else "[]"
         elif (self.IsPredicateReg or self.IsPT) and self.IsNotReg:
             return f"!{self.Reg}"
         elif self.IsReg:
@@ -395,27 +474,24 @@ class Operand:
         return self.__str__()
 
     def SetReg(self, RegName):
-        if not self.IsReg:
-            raise InvalidOperandException("Cannot set register for non-register operand")
         self.Reg = RegName
-        self.Name = RegName
+        self.Name = None
+        self.IsReg = True
+        self.IsImmediate = False
+        self.Name = self.__str__()
 
     def Replace(self, other):
         self.Name = other.Name
         self.Reg = other.Reg
-        self.Suffix = other.Suffix
-        self.ArgOffset = other.ArgOffset
         self.IsReg = other.IsReg
-        self.IsArg = other.IsArg
         self.IsMemAddr = other.IsMemAddr
+        self.IsConstMem = other.IsConstMem
+        self.Prefix = other.Prefix
+        self.Suffix = other.Suffix
+        self.OffsetOrImm = other.OffsetOrImm
+        self.IndexReg = other.IndexReg
+        self.ConstMemBank = other.ConstMemBank
         self.IsImmediate = other.IsImmediate
-        self.ImmediateValue = other.ImmediateValue
-        self.MemAddrOffset = other.MemAddrOffset
-        self.URegOffset = other.URegOffset
-        self.IsNegativeReg = other.IsNegativeReg
-        self.IsNotReg = other.IsNotReg
-        self.IsAbsReg = other.IsAbsReg
-        self.IsFloatImmediate = other.IsFloatImmediate
         self.Skipped = other.Skipped
         self.TypeDesc = other.TypeDesc
         self.IRType = other.IRType
@@ -447,8 +523,8 @@ class Operand:
     def GetIRName(self, lifter):
         if self.IsReg:
             return self.Reg + self.TypeDesc
-        elif self.IsArg:
-            return f"c[0x0][0x{self.ArgOffset:x}]" + self.TypeDesc
+        elif self.IsArg and self.ArgOffset is not None:
+            return f"c[0x0][0x{int(self.ArgOffset):x}]" + self.TypeDesc
 
         return None
     
@@ -456,18 +532,22 @@ class Operand:
         print("operand: ", self.Name, self.Reg)
     
     def Clone(self):
-        return Operand(
+        cloned = Operand(
             Name=self.Name,
             Reg=self.Reg,
-            Suffix=self.Suffix,
-            ArgOffset=self.ArgOffset if self.IsArg else self.MemAddrOffset,
             IsReg=self.IsReg,
-            IsArg=self.IsArg,
             IsMemAddr=self.IsMemAddr,
+            IsConstMem=self.IsConstMem,
+            Prefix=self.Prefix,
+            Suffix=self.Suffix,
+            OffsetOrImm=self.OffsetOrImm,
+            IndexReg=self.IndexReg,
+            ConstMemBank=self.ConstMemBank,
             IsImmediate=self.IsImmediate,
-            ImmediateValue=self.ImmediateValue,
-            Negate=self.IsNegativeReg,
-            Not=self.IsNotReg,
-            Abs=self.IsAbsReg,
-            URegOffset=self.URegOffset
         )
+        cloned.Skipped = self.Skipped
+        cloned.TypeDesc = self.TypeDesc
+        cloned.IRType = self.IRType
+        cloned.IRRegName = self.IRRegName
+        cloned.DefiningInsts = set(self.DefiningInsts)
+        return cloned

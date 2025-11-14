@@ -29,16 +29,16 @@ def process(instructions, offset_to_sr):
 
     for inst in instructions:
         for operand in inst.operands:
-            if operand.IsArg and operand.ArgOffset in offset_to_sr:
-                offset = operand.ArgOffset
+            if operand.IsArg and operand.Offset in offset_to_sr:
+                offset = operand.Offset
 
                 if offset not in offset_to_temp_reg:
                     sr_name = offset_to_sr[offset]
                     temp_reg_name = f"sr_temp_{hex(offset)}"
                     offset_to_temp_reg[offset] = temp_reg_name
 
-                    sr_operand = Operand(sr_name, sr_name, None, -1, False, False, False)
-                    temp_operand = Operand(temp_reg_name, temp_reg_name, None, -1, True, False, False)
+                    sr_operand = Operand.fromReg(sr_name, sr_name)
+                    temp_operand = Operand.fromReg(temp_reg_name, temp_reg_name)
 
                     s2r_inst = Instruction(
                         id=f"s2r_{hex(offset)}",
@@ -51,11 +51,11 @@ def process(instructions, offset_to_sr):
                     count += 1
 
         for idx, operand in enumerate(inst.operands):
-            if operand.IsArg and operand.ArgOffset in offset_to_sr:
-                offset = operand.ArgOffset
+            if operand.IsArg and operand.Offset in offset_to_sr:
+                offset = operand.Offset
                 temp_reg_name = offset_to_temp_reg[offset]
 
-                new_operand = Operand(temp_reg_name, temp_reg_name, operand.Suffix, -1, True, False, operand.IsMemAddr)
+                new_operand = Operand.fromReg(temp_reg_name, temp_reg_name, suffix=operand.Suffix)
                 new_operand.SetTypeDesc(operand.GetTypeDesc())
                 inst._operands[idx] = new_operand
 

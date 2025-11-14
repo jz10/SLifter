@@ -29,9 +29,20 @@ class Instruction:
             RegPair.SetReg('R' + str(int(RegPair.Reg[1:]) + 1))
             self._operands.insert(1, RegPair)
             self._UseOpStartIdx = 2
+        
+        # UIMAD.WIDE has two defs, RN+1:RN
+        if len(self.opcodes) > 1 and self.opcodes[0] == "UIMAD" and self.opcodes[1] == "WIDE":
+            RegPair = self._operands[0].Clone()
+            RegPair.SetReg('UR' + str(int(RegPair.Reg[2:]) + 1))
+            self._operands.insert(1, RegPair)
+            self._UseOpStartIdx = 2
             
         # SHFL.DOWN PT, R59 = R18, 0x8, 0x1f
         elif len(self.opcodes) > 1 and self.opcodes[0] == "SHFL":
+            self._UseOpStartIdx = 2
+            
+        # ISETP.LT.U32.OR = P0, PT, R12, R10, P0;
+        elif "SETP" in self.opcodes[0]:
             self._UseOpStartIdx = 2
 
         # LDG.E.64.SYS R4 = [R2] defines R4 and R5

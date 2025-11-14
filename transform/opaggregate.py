@@ -97,6 +97,10 @@ class OperAggregate(SaSSTransform):
             # phi and mov not matched because they can be trivially paired
             if not patternKey or patternKey[0] == "PHI" or patternKey[0] == "MOV":
                 continue
+            # ldg not matched because ldg.64 can be for float64 or int64
+            # for now, just avoid this complexity
+            if patternKey[0] == "LDG":
+                continue
             OpcodePatterns.append(patternKey)
     
         for bb in func.blocks:
