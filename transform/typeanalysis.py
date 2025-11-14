@@ -12,12 +12,6 @@ class TypeAnalysis(SaSSTransform):
         # address operands are represented as Int64 and cast to pointers in the lifter
         # operands with ANY can have any type
         self.instructionTypeTable = {
-            "FADD": [["Float32"], ["Float32", "Float32"]],
-            "FFMA": [["Float32"], ["Float32", "Float32", "Float32"]],
-            "FMUL": [["Float32"], ["Float32", "Float32"]],
-            "FSETP": [["Int1", "Int1"], ["Float32", "Float32", "Int1"]],
-            "FSEL": [["Float32"], ["Float32", "Float32", "Int1"]],
-            "MUFU": [["Float32"], ["Float32"]],
             "S2R": [["Int32"], ["Int32", "Int32"]],
             "IMAD": [["Int32"], ["Int32", "Int32", "Int32"]],
             "IADD3": [["Int32"], ["Int32", "Int32", "Int32"]],
@@ -74,6 +68,21 @@ class TypeAnalysis(SaSSTransform):
             "PLOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
             "HMMA": [["Float32"] * 4, ["Float32"] * 8],
             "MOVM": [["PROP"], ["PROP"]],
+            
+            # Float instruction types
+            "FADD": [["Float32"], ["Float32", "Float32"]],
+            "FFMA": [["Float32"], ["Float32", "Float32", "Float32"]],
+            "FMUL": [["Float32"], ["Float32", "Float32"]],
+            "FSETP": [["Int1", "Int1"], ["Float32", "Float32", "Int1"]],
+            "FSEL": [["Float32"], ["Float32", "Float32", "Int1"]],
+            "MUFU": [["Float32"], ["Float32"]],
+            "FCHK": [["Int1"], ["Float32", "Int32"]],
+            
+            # Double instruction types
+            "DADD": [["Float64"], ["Float64", "Float64"]],
+            "DMUL": [["Float64"], ["Float64", "Float64"]],
+            "DFMA": [["Float64"], ["Float64", "Float64", "Float64"]],
+            "DSETP": [["Int1", "Int1"], ["Float64", "Float64", "Int1"]],
 
             # Uniform variants
             "USHF": [["Int32"], ["Int32", "Int32", "Int32"]],
@@ -81,6 +90,8 @@ class TypeAnalysis(SaSSTransform):
             "ULOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
             "UIADD3": [["Int32"], ["Int32", "Int32", "Int32"]],
             "UMOV": [["Int32"], ["Int32"]],
+            "UISETP": [["Int1"], ["PROP", "PROP", "PROP", "PROP"]],
+            "USEL": [["Int32"], ["Int32", "Int32", "Int1"]],
 
             # Dummy instruction types
             "PHI": [["PROP"], ["PROP", "PROP", "PROP"]],
@@ -392,6 +403,12 @@ class TypeAnalysis(SaSSTransform):
         # Operand overrides
         if operand.IsPredicateReg or operand.IsPT:
             typeDesc = "Int1"
+            
+        if ".64" in Inst.opcodes:
+            if typeDesc == "Int32":
+                typeDesc = "Int64"
+            elif typeDesc == "Float32":
+                typeDesc = "Float64"
 
         return typeDesc
 

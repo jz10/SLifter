@@ -97,7 +97,8 @@ class X86Lifter(Lifter):
         # self.GetWarpId = self.ir.Function(llvm_module, FuncTy, FuncName)
 
         # Constant memory
-        ConstArrayTy =  self.ir.ArrayType(self.ir.IntType(8), 4096)
+        BankTy =  self.ir.ArrayType(self.ir.IntType(8), 4096)
+        ConstArrayTy =  self.ir.ArrayType(BankTy, 5)
         self.ConstMem = self.ir.GlobalVariable(llvm_module, ConstArrayTy, "const_mem")
         SharedArrayTy =  self.ir.ArrayType(self.ir.IntType(32), 49152)
         self.SharedMem = self.ir.GlobalVariable(llvm_module, SharedArrayTy, "shared_mem")
@@ -127,6 +128,7 @@ class X86Lifter(Lifter):
         ptr = builder.gep(
             self.ConstMem,
             [
+                self.ir.Constant(self.ir.IntType(64), 0),
                 self.ir.Constant(self.ir.IntType(64), 0),
                 self.ir.Constant(self.ir.IntType(64), offset),
             ],
@@ -170,6 +172,7 @@ class X86Lifter(Lifter):
         ptr = builder.gep(
             self.ConstMem,
             [
+                self.ir.Constant(self.ir.IntType(64), 0),
                 self.ir.Constant(self.ir.IntType(64), 0),
                 self.ir.Constant(self.ir.IntType(64), offset),
             ],
@@ -229,6 +232,7 @@ class X86Lifter(Lifter):
             addr = builder.gep(
                 self.ConstMem,
                 [
+                    self.ir.Constant(self.ir.IntType(64), 0),
                     self.ir.Constant(self.ir.IntType(64), 0),
                     self.ir.Constant(self.ir.IntType(64), entry.ArgOffset),
                 ],

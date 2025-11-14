@@ -128,7 +128,8 @@ class SaSSParserBase:
         rest_content = line.replace(items[0], "")
         
         if pred_reg:
-            PFlag = Operand.fromReg(pred_reg, pred_reg, None, False, not_, False)
+            prefix = '!' if not_ else None
+            PFlag = Operand.fromReg(pred_reg, pred_reg, prefix=prefix)
             opcode = items[1]
             rest_content = rest_content.replace(items[1], "")
 
@@ -188,7 +189,7 @@ class SaSSParserBase:
             return addr
         for inst in Insts:
             if inst.IsBranch():
-                target_addr = _align_up_to_inst(inst.operands[-1].Name.zfill(4))
+                target_addr = _align_up_to_inst(inst.operands[-1].__str__().zfill(4))
                 inst.operands[0].Name = format(target_addr, '04x')
                 inst.operands[0].ImmediateValue = target_addr
 

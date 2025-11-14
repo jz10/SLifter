@@ -143,6 +143,7 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
     hosts = entry.get("hosts", {})
     lifter = lifter.lower()
     host_rel = hosts.get(lifter, "")
+    temp_dirs: List[Path] = []
 
     # Ensure suffixed SASS exists; if not, try compiling from .cu or renaming legacy .sass
     suite_name, testname = base.split("/", 1) if "/" in base else (base, base)
@@ -268,7 +269,6 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
     kernel_wrapper_variant = TEST_DIR / "common" / f"kernel_wrapper_{sm}.h"
     wrapper_include_dir: Optional[Path] = None
     clean_paths: List[Path] = []
-    temp_dirs: List[Path] = []
 
     try:
         # 1) lift to LLVM

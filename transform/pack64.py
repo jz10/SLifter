@@ -40,7 +40,7 @@ class Pack64(SaSSTransform):
         src_op_upper.SetReg(self._next_hi_name(addr_op.Reg))
 
         dest_op_name = src_op_lower.Reg + "_int64"
-        dst_op = Operand(dest_op_name, dest_op_name, None, None, True, False, False)
+        dst_op = Operand.fromReg(dest_op_name, dest_op_name)
 
         pack64_inst = Instruction(
             id=f"pack64_{addr_op.Name}",
@@ -58,10 +58,10 @@ class Pack64(SaSSTransform):
         return pack64_inst
 
     def create_iadd64(self, addr_op, offset_op, inst):
-        src_op_base = Operand(addr_op.Name, addr_op.Name, None, None, True, False, False)
-        src_op_offset = Operand(offset_op.Name, offset_op.Name, None, None, True, False, False)
+        src_op_base = Operand.fromReg(addr_op.Name, addr_op.Name)
+        src_op_offset = Operand.fromReg(offset_op.Name, offset_op.Name)
         dest_op_name = f"{addr_op.Name}_iadd64"
-        dest_op = Operand(dest_op_name, dest_op_name, None, None, True, False, False)
+        dest_op = Operand.fromReg(dest_op_name, dest_op_name)
 
         iadd64_inst = Instruction(
             id=f"iadd64_{addr_op.Name}",

@@ -85,13 +85,13 @@ class XmadToImad(SaSSTransform):
                 
                 # Get addend from second instruction for IMAD
                 # First instruction should always have addend as RZ
-                imad_addend = Operand("RZ", "RZ", None, None, True, False, False)
+                imad_addend = Operand.fromReg("RZ", "RZ")
                 if len(instr2.operands) > 3 and instr2.operands[3].Reg != "RZ":
                     imad_addend = instr2.operands[3]
                 
                 # Create IMAD instruction with second instruction's addend
                 imad_operands = [
-                    Operand(def_reg, def_reg, None, None, True, False, False),
+                    Operand.fromReg(def_reg, def_reg),
                     multiplicand1,
                     multiplicand2,
                     imad_addend
@@ -189,10 +189,10 @@ class XmadToImad(SaSSTransform):
                 
                 # Create IMAD instruction for 16-bit to 32-bit multiplication
                 imad_operands = [
-                    Operand(def_reg, def_reg, None, None, True, False, False),
+                    Operand.fromReg(def_reg, def_reg),
                     multiplicand1,
                     multiplicand2,
-                    Operand("RZ", "RZ", None, None, True, False, False)
+                    Operand.fromReg("RZ", "RZ")
                 ]
                 
                 imad_instr = Instruction(
