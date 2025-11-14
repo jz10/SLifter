@@ -60,7 +60,7 @@ def discover_bases() -> Dict[str, Dict[str, Dict[str, Dict[str, str]]]]:
     """
     by_base: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
     suites = ["nvbit", "cuobjdump", "hecbench"]
-    sms = ["75"]
+    sms = ["75", "90"]
     for suite in suites:
         suite_dir = TEST_DIR / suite
         if not suite_dir.exists():
@@ -143,6 +143,9 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
     hosts = entry.get("hosts", {})
     lifter = lifter.lower()
     host_rel = hosts.get(lifter, "")
+    
+    clean_paths: List[Path] = []
+    temp_dirs: List[Path] = []
 
     # Ensure suffixed SASS exists; if not, try compiling from .cu or renaming legacy .sass
     suite_name, testname = base.split("/", 1) if "/" in base else (base, base)
@@ -201,7 +204,7 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
                         makefile_path = test_dir / "Makefile"
                         if makefile_path.exists():
                             build_dir = tmp_build_dir / testname
-                            shutil.copytree(test_dir, build_dir, dirs_exist_ok=True)
+                            shutil.copytree(test_dir, build_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".tmp_builds"))
                             try:
                                 run(["make", "clean"], cwd=build_dir)
                             except AssertionError:
@@ -267,8 +270,8 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
     # Track generated build artifacts to remove even if the test fails
     kernel_wrapper_variant = TEST_DIR / "common" / f"kernel_wrapper_{sm}.h"
     wrapper_include_dir: Optional[Path] = None
-    clean_paths: List[Path] = []
-    temp_dirs: List[Path] = []
+    #clean_paths: List[Path] = []
+    #temp_dirs: List[Path] = []
 
     try:
         # 1) lift to LLVM
