@@ -33,11 +33,10 @@ class Pack64(SaSSTransform):
         return rest.isdigit()
 
     def create_pack64(self, addr_op, parentBB):
-        src_op_lower = addr_op.Clone()
-        src_op_lower.IsMemAddr = False
+        src_op_lower = Operand.fromReg(addr_op.Reg, addr_op.Reg)
 
-        src_op_upper = src_op_lower.Clone()
-        src_op_upper.SetReg(self._next_hi_name(addr_op.Reg))
+        src_op_upper_name = self._next_hi_name(addr_op.Reg)
+        src_op_upper = Operand.fromReg(src_op_upper_name, src_op_upper_name)
 
         dest_op_name = src_op_lower.Reg + "_int64"
         dst_op = Operand.fromReg(dest_op_name, dest_op_name)

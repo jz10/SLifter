@@ -203,7 +203,7 @@ class SaSSParserBase:
                     leaders.add(Insts[i+1].id)
             if inst.IsBranch():
                 leaders.add(inst.operands[0].Name.zfill(4))
-            if curr_pred != inst.pflag:
+            if str(curr_pred) != str(inst.pflag):
                 leaders.add(Insts[i].id)
                 if inst.Predicated():
                     predicated_leaders.add(Insts[i].id)
@@ -227,6 +227,7 @@ class SaSSParserBase:
                     PredicatedBlock = False
                     if BlockInsts[0].id in predicated_leaders:
                         PredicatedBlock = True
+                        pflag = BlockInsts[0].pflag.Clone()
                         pbra_inst = Instruction(
                             id=f"{int(BlockInsts[0].id, 16):04X}",
                             opcodes=["PBRA"],
@@ -234,7 +235,6 @@ class SaSSParserBase:
                             parentBB=None,
                             pflag=None
                         )
-                        pbra_inst._InstContent = f"PBRA {BlockInsts[0].pflag.Name}"
                         BlockInsts.insert(0, pbra_inst)
                         BlockInsts[1]._id = f"{int(BlockInsts[0].id, 16)+1:04X}"
                         for PredInst in BlockInsts:
@@ -242,6 +242,7 @@ class SaSSParserBase:
 
                     # Create block
                     Block = BasicBlock(BlockId, pflag, BlockInsts)
+                    pflag = None
                     Blocks.append(Block)
                     
                     if PrevBlock:
@@ -294,6 +295,10 @@ class SaSSParserBase:
             NewBlockInsts = block.instructions[1:]
             NewBlock = BasicBlock(NewBlockInsts[0].id, None, NewBlockInsts)
             block.instructions = [pbraInst]
+            
+            # Move pflag to new block
+            NewBlock._PFlag = block._PFlag
+            block._PFlag = None
             
             InsertBlock[block] = NewBlock
             BlockByAddr[NewBlock.addr_content] = NewBlock

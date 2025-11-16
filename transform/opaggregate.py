@@ -97,10 +97,10 @@ class OperAggregate(SaSSTransform):
             # phi and mov not matched because they can be trivially paired
             if not patternKey or patternKey[0] == "PHI" or patternKey[0] == "MOV":
                 continue
-            # ldg not matched because ldg.64 can be for float64 or int64
-            # for now, just avoid this complexity
-            if patternKey[0] == "LDG":
-                continue
+            # # ldg not matched because ldg.64 can be for float64 or int64
+            # # for now, just avoid this complexity
+            # if patternKey[0] == "LDG":
+            #     continue
             OpcodePatterns.append(patternKey)
     
         for bb in func.blocks:
@@ -186,7 +186,6 @@ class OperAggregate(SaSSTransform):
                 # Reg2Defs = set()
                 # Reg2Defs.add((RegPair[1][0].Parent, RegPair[1][0]))
 
-
                 # if not self.AllDefsCovered(MatchingPairs, Reg1Defs, Reg2Defs):
                 #     InsertInsts[Inst1].append(self.CreatePack64(Inst1, RegPair[0], RegPair[1]))
                 #     EndOfChain = True
@@ -236,7 +235,7 @@ class OperAggregate(SaSSTransform):
             return True
         
         def MatchOpcodes(PatternOpcodes, InstOpcodes, Variables):
-            if len(PatternOpcodes) != len(InstOpcodes):
+            if len(PatternOpcodes) > len(InstOpcodes):
                 return False
             
             for patternOpcode, opcode in zip(PatternOpcodes, InstOpcodes):
@@ -581,10 +580,9 @@ class OperAggregate(SaSSTransform):
             InInsts = Pattern[0]
             OutInsts = Pattern[1]
 
-            # For pattern that takes more than one input instruction,
             # go over user instruction of every InInsts to make sure every user is converted
             AllConverted = True
-            if len(InInsts) > 1:
+            if len(InInsts) > 1 or (len(InInsts) == 1 and len(InInsts[0].GetDefs()) > 1):
                 for Inst in InInsts:
                     for User in Inst.Users.values():
                         for UserInst, UserOp in User:
@@ -600,6 +598,7 @@ class OperAggregate(SaSSTransform):
             
             # If not all users converted, insert UNPACK64
             if not AllConverted:
+                print(f"\tNot all users converted, inserting UNPACK64 after {InInsts[-1]}")
                 self.InsertInsts[InInsts[-1]].extend(self.CreateUnpack64(OutInsts))
             
     def CreateUnpack64(self, OutInsts):

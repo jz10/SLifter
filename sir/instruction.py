@@ -25,17 +25,21 @@ class Instruction:
 
         # IMAD.WIDE has two defs, RN+1:RN
         if len(self.opcodes) > 1 and self.opcodes[0] == "IMAD" and self.opcodes[1] == "WIDE":
-            RegPair = self._operands[0].Clone()
-            RegPair.SetReg('R' + str(int(RegPair.Reg[1:]) + 1))
+            RegPairName = 'R' + str(int(self._operands[0].Reg[1:]) + 1)
+            RegPair = Operand.fromReg(RegPairName, RegPairName)
             self._operands.insert(1, RegPair)
             self._UseOpStartIdx = 2
         
         # UIMAD.WIDE has two defs, RN+1:RN
         if len(self.opcodes) > 1 and self.opcodes[0] == "UIMAD" and self.opcodes[1] == "WIDE":
-            RegPair = self._operands[0].Clone()
-            RegPair.SetReg('UR' + str(int(RegPair.Reg[2:]) + 1))
+            RegPairName = 'UR' + str(int(self._operands[0].Reg[2:]) + 1)
+            RegPair = Operand.fromReg(RegPairName, RegPairName)
             self._operands.insert(1, RegPair)
             self._UseOpStartIdx = 2
+            
+        # BAR.SYNC 0x0
+        elif len(self.opcodes) > 1 and self.opcodes[0] == "BAR":
+            self._UseOpStartIdx = 0
             
         # SHFL.DOWN PT, R59 = R18, 0x8, 0x1f
         elif len(self.opcodes) > 1 and self.opcodes[0] == "SHFL":
@@ -47,17 +51,26 @@ class Instruction:
 
         # LDG.E.64.SYS R4 = [R2] defines R4 and R5
         elif self.IsLoad() and "64" in self.opcodes and len(self._operands) > 1:
-            RegPair = self._operands[0].Clone()
-            if "UR" in RegPair.Reg:
-                RegPair.SetReg('UR' + str(int(RegPair.Reg[2:]) + 1))
+            RegPairName = None
+            if "UR" in self._operands[0].Reg:
+                RegPairName = 'UR' + str(int(self._operands[0].Reg[2:]) + 1)
             else:
-                RegPair.SetReg('R' + str(int(RegPair.Reg[1:]) + 1))
+                RegPairName = 'R' + str(int(self._operands[0].Reg[1:]) + 1)
+            RegPair = Operand.fromReg(RegPairName, RegPairName)
             self._operands.insert(1, RegPair)
             self._UseOpStartIdx = 2
+            
+        # LOP3.LUT R9, RZ =  R21, RZ, 0x33, !PT ; or
+        # LOP3.LUT R6 = RZ, R4, RZ, 0x33, !PT ; 
+        elif "LOP3" in self.opcodes[0] and self.opcodes[1] == "LUT":
+            if self.GetDefs()[0].IsPredicateReg:
+                self._UseOpStartIdx = 2
+            else:
+                self._UseOpStartIdx = 1
 
         elif len(self.opcodes) > 1 and self.opcodes[0] == "UIMAD" and self.opcodes[1] == "WIDE":
-            RegPair = self._operands[0].Clone()
-            RegPair.SetReg('UR' + str(int(RegPair.Reg[2:]) + 1))
+            RegPairName = 'UR' + str(int(self._operands[0].Reg[2:]) + 1)
+            RegPair = Operand.fromReg(RegPairName, RegPairName)
             self._operands.insert(1, RegPair)
             self._UseOpStartIdx = 2
 
@@ -155,12 +168,6 @@ class Instruction:
         cloned_inst._CtlCode = self._CtlCode
         return cloned_inst
     
-    def ReachingDefsFor(self, str):
-        for useOp, defInsts in self.ReachingDefsSet.items():
-            if useOp.Reg == str:
-                return defInsts
-        return None
-    
     def GetArgsAndRegs(self):
         regs = []
         args = []
@@ -252,14 +259,6 @@ class Instruction:
     def GetDefs(self):
         return self._operands[:self._UseOpStartIdx]
     
-    def GetDef(self):
-        defs = self.GetDefs()
-        
-        if len(defs) > 1:
-            print("Warning: GetDef finds more than one def operand")
-
-        return defs[0] if len(defs) > 0 else None
-    
     def GetDefByReg(self, Reg):
         for defOp in self.GetDefs():
             if defOp.Reg == Reg:
@@ -313,38 +312,6 @@ class Instruction:
         if opcode[0] == '!' and opcode[1] == 'P' and opcode[2].isdigit():
             return True
         return False
-    
-    def ParseInstructionModifiers(self, opcodes):
-        modifiers = {}
-        for opcode in opcodes:
-            if opcode.startswith('.'):
-                if opcode in ['.S32', '.U32', '.S16', '.U16', '.S64', '.U64']:
-                    modifiers['type'] = opcode[1:]
-                elif opcode in ['.F32', '.F64', '.F16']:
-                    modifiers['float_type'] = opcode[1:]
-                elif opcode in ['.RN', '.RZ', '.RM', '.RP']:
-                    modifiers['rounding'] = opcode[1:]
-                elif opcode in ['.RCP', '.RSQ', '.SIN', '.COS', '.EX2', '.LG2']:
-                    modifiers['function'] = opcode[1:]
-                elif opcode.startswith('.LUT'):
-                    # Extract LUT value from modifier like .LUT0x3c
-                    modifiers['lut'] = int(opcode[4:], 16)
-        return modifiers
-    
-    def ExtractLUTFromOperands(self):
-        """Extract LUT value from LOP3 operands"""
-        # LOP3 typically has format: LOP3.LUT Rd, Rs1, Rs2, Rs3, LUT_value
-        # The LUT value is often the 5th operand
-        if len(self._operands) >= 5:
-            lut_operand = self._operands[4]
-            if hasattr(lut_operand, 'Value'):
-                return lut_operand.Value
-        # Also check opcodes for LUT value
-        for opcode in self._opcodes:
-            if opcode.startswith('0x'):
-                return int(opcode, 16)
-        return 0x3c  # Default fallback
-
 
     def dump(self):
         print("inst: ", self._id, self._opcodes)

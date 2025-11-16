@@ -142,6 +142,7 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
     sass_rel = entry.get("sass_rel", "")
     hosts = entry.get("hosts", {})
     lifter = lifter.lower()
+    host_rel = hosts.get(lifter, "")
 
     clean_paths: List[Path] = []
     temp_dirs: List[Path] = []
@@ -335,7 +336,6 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
                         str(out_o_path),
                     ], cwd=TEST_DIR)
                     clean_paths.append(TEST_DIR / out_o_path)
-                    clean_paths.append(TEST_DIR / exe_path)
 
                     cu_flags: List[str] = [f"-D__CUDA_ARCH__={sm}0"]
 
@@ -361,11 +361,6 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
                 elif lifter == "nvvm":
                     ptx_path = test_subdir / f"{out_base}.ptx"
                     cubin_path = test_subdir / f"{out_base}.cubin"
-
-                    clean_paths.extend([
-                        TEST_DIR / ptx_path,
-                        TEST_DIR / exe_path,
-                    ])
 
                     run([
                         "llc",
@@ -399,7 +394,6 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
                         str(exe_path),
                     ]
                     run(nvcc_cmd, cwd=TEST_DIR)
-
                     out = run([str(exe_path), str(device_image_path)], cwd=TEST_DIR)
                     assert "TEST PASSED" in out
                 else:

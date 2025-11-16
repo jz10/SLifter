@@ -18,24 +18,26 @@ class DCE(SaSSTransform):
             "STG",    
             "ST",     
             "STS",    
-            "SUST",   
+            "SUST",
+            "STL",
+            "STP",
+            
+            "MEMBAR",
+            "DEPBAR",  
+            
+            "BAR", 
+            "SYNC",
+            "WARPSYNC",
+            
+            "BPT",
             "ATOM",   
             "RED",
-            "BAR", 
             "CALL",   
             "RET",    
             "EXIT",   
-            "BRA",    
-            "PBRA",   
-            "VOTE",   
-            "SHFL",   
-            "LDG",    
-            "LD",     
-            "LDS",    
-            "SULD",
-            "MATCH",
+            "BRA",
+            "PBRA",
             "RED",
-            "LDG64",
         ])
 
         live = []

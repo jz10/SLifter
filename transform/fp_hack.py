@@ -56,14 +56,14 @@ class FPHack(SaSSTransform):
         if not inst4:
             return 0
 
-        src_op = inst2.GetDef().Clone()
-        dest_op = src_op.Clone()
-        dest_op.SetReg(src_op.Name + "_cast")
-        iaddUseOp.SetReg(src_op.Name + "_cast")
+        src_op = inst2.GetDefs()[0].Clone()
+        dest_op_name = src_op.Name + "_cast"    
+        dest_op = Operand.fromReg(dest_op_name, dest_op_name)
+        iaddUseOp.SetReg(dest_op_name)
 
         for users in inst2.Users.values():
             for useInst, useOp in users:
-                useOp.SetReg(src_op.Name + "_cast")
+                useOp.SetReg(dest_op_name)
 
         bitcastInstBefore = Instruction(
             id=f"{inst2.id}_bitcast_before",
@@ -73,10 +73,10 @@ class FPHack(SaSSTransform):
         )
         insertInsts[inst2] = bitcastInstBefore
         
-        src_op = inst3.GetDef().Clone()
-        dest_op = src_op.Clone()
-        dest_op.SetReg(src_op.Name + "_cast")
-        f2iUseOp.SetReg(src_op.Name + "_cast")
+        src_op = inst3.GetDefs()[0].Clone()
+        dest_op_name = src_op.Name + "_cast"    
+        dest_op = Operand.fromReg(dest_op_name, dest_op_name)
+        f2iUseOp.SetReg(dest_op_name)
 
         bitcastInstAfter = Instruction(
             id=f"{inst3.id}_bitcast_after",

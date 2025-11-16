@@ -36,16 +36,23 @@ class Lifter:
         else:
             transforms.apply(module)
             
-        llvm_module = self.ir.Module(module.name)
+        self.llvm_module = self.ir.Module(module.name)
 
-        self.AddIntrinsics(llvm_module)
+        self.AddIntrinsics(self.llvm_module)
 
         for func in module.functions:
-            self._lift_function(func, llvm_module)
-
+            self._lift_function(func, self.llvm_module)
+            
+        outputIR = str(self.llvm_module)
+        
+        outputIR = self.postprocess_ir(outputIR)
+        
         if self._verbose:
-            print(llvm_module)
-        print(llvm_module, file=outfile)
+            print(outputIR)
+        print(outputIR, file=outfile)
+        
+    def postprocess_ir(self, ir_code):
+        return ir_code
         
     def get_transform_passes(self):
         raise NotImplementedError

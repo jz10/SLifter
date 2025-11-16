@@ -33,6 +33,40 @@ class SSA(SaSSTransform):
         entry_block = function.blocks[0]
         return DominatorTree(entry_block, function.blocks)
 
+    def getBlockPredicate(self, block):
+        """
+        Returns (reg_name, is_negated) for the block predicate or None.
+        """
+        if not block:
+            return None
+
+        pflag = getattr(block, "PFlag", None)
+        if not pflag:
+            return None
+
+        text = str(pflag).strip()
+        if not text:
+            return None
+
+        if text.startswith('!'):
+            return (text[1:], True)
+        return (text, False)
+
+    def predicatesContradict(self, block_a, block_b):
+        """
+        True iff the two blocks are gated by the same predicate register
+        but with opposite polarity.
+        """
+        pa = self.getBlockPredicate(block_a)
+        pb = self.getBlockPredicate(block_b)
+
+        if pa is None or pb is None:
+            return False
+
+        reg_a, neg_a = pa
+        reg_b, neg_b = pb
+        return reg_a == reg_b and neg_a != neg_b
+
     def insertPhiNodes(self, function, dom_tree):
         # Iterated dominance frontier algorithm on register defs.
         def_sites = defaultdict(set)
@@ -54,6 +88,9 @@ class SSA(SaSSTransform):
             while worklist:
                 block = worklist.pop(0)
                 for df_block in dom_tree.dominance_frontier.get(block, []):
+                    # if self.predicatesContradict(block, df_block):
+                    #     continue
+
                     if df_block not in phi_added_at:
                         phi = self.createPhiNode(var, df_block)
                         # Insert PHI at the top of the block
@@ -158,6 +195,7 @@ class SSA(SaSSTransform):
 
     def updateSuccessorPhis(self, block):
         for succ in block._succs:
+            contradicts = self.predicatesContradict(block, succ)
             # Find our position in succ's predecessor list
             pred_idx = succ._preds.index(block)
 
@@ -170,7 +208,10 @@ class SSA(SaSSTransform):
 
                 if pred_idx + 1 < len(inst.operands):
                     phi_op = inst.operands[pred_idx + 1]
-                    current_name = self.getCurrentNameOrVersion0(original_reg)
+                    if contradicts:
+                        current_name = self.getUndefinedSSAName(original_reg)
+                    else:
+                        current_name = self.getCurrentNameOrVersion0(original_reg)
                     phi_op.SetReg(current_name)
                     phi_op.IRRegName = None
 
@@ -207,6 +248,16 @@ class SSA(SaSSTransform):
             self.undefined_ssa[original_reg] = zero_name
 
         stack.append(zero_name)
+        return zero_name
+
+    def getUndefinedSSAName(self, original_reg):
+        if not original_reg:
+            return None
+
+        zero_name = self.undefined_ssa.get(original_reg)
+        if zero_name is None:
+            zero_name = f"{original_reg}@0"
+            self.undefined_ssa[original_reg] = zero_name
         return zero_name
 
     def insertSetZeroForUndefs(self, function):

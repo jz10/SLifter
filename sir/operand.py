@@ -36,8 +36,11 @@ class Operand:
         IndexReg = None
         ConstMemBank = None
         
-        # For operator aggregation pass, if A:B is given, only parse B 
-        if ':' in Operand_Content:
+        # For aggregator pass, to allow correct parsing
+        # if c[0x1][0x104]:c[0x1][0x100] is given, only parse c[0x1][0x100]
+        # Similarly -0x2:-0x1 -> -0x1
+        # However, we want to keep register as R2:R1 as it differentiates from R1 or R2
+        if ':' in Operand_Content and "0x" in Operand_Content:
             Operand_Content = Operand_Content.split(':')[1]
         
         if Operand_Content.startswith('-'):
@@ -78,6 +81,10 @@ class Operand:
             # Otherwise suboperand is a register
             IsReg = True
             
+            # Match suffix(.reuse, .H1, .X4)
+            if '.' in SubOperand:
+                SubOperand, Suffix = SubOperand.split('.', 1)
+            
             # Match prefix(-, !, ||)
             if SubOperand.startswith('-'):
                 Prefix = '-'
@@ -92,9 +99,6 @@ class Operand:
                 Prefix = '|'
                 SubOperand = SubOperand[1:-1]
             
-            # Match suffix(.reuse, .H1, .X4)
-            if '.' in SubOperand:
-                Suffix, SubOperand = SubOperand.split('.', 1)
             
             if RegName is not None:
                 IndexReg = SubOperand
@@ -478,6 +482,8 @@ class Operand:
         self.Name = None
         self.IsReg = True
         self.IsImmediate = False
+        # self.Suffix = None
+        # self.Prefix = None
         self.Name = self.__str__()
 
     def Replace(self, other):

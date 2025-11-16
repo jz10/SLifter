@@ -43,15 +43,17 @@ class NVVMLifter(Lifter):
             RegRemap(),
             SetZero(),
             DefUseAnalysis(),
-            DCE(),
-            DefUseAnalysis(),
             MovEliminate(),
+            DefUseAnalysis(),
+            DCE(),
             DefUseAnalysis(),
             OperAggregate(),
             RegRemap(),
             DefUseAnalysis(),
             DCE(),
+            DefUseAnalysis(),
             TypeAnalysis(),
+            DefUseAnalysis(),
             RegRemap(),
         ]
         
@@ -71,7 +73,14 @@ class NVVMLifter(Lifter):
 
         return ""
         
-            
+    def Declare_nvvm(self, name, ret_ty, arg_tys):
+        if name not in self.DeviceFuncs:
+            func_ty = self.ir.FunctionType(ret_ty, arg_tys)
+            func = self.ir.Function(self.llvm_module, func_ty, name)
+            self.DeviceFuncs[name] = func
+
+        return self.DeviceFuncs[name]
+    
     def AddIntrinsics(self, llvm_module):
         # NVPTX target setup (required for correct addrspace lowering)
         llvm_module.triple = "nvptx64-nvidia-cuda"
@@ -79,67 +88,56 @@ class NVVMLifter(Lifter):
         nvvm_version_node = llvm_module.add_metadata([self.ir.Constant(self.ir.IntType(32), 2), self.ir.Constant(self.ir.IntType(32), 0)])
         llvm_module.add_named_metadata("nvvmir.version").add(nvvm_version_node)
 
-        def declare_nvvm(name, ret_ty, arg_tys):
-            func_ty = self.ir.FunctionType(ret_ty, arg_tys)
-            return self.ir.Function(llvm_module, func_ty, name)
+        self.DeviceFuncs = {}
 
         # NVVM special register readers
         i32 = self.ir.IntType(32)
-        self._nvvm_tid_x = declare_nvvm("llvm.nvvm.read.ptx.sreg.tid.x", i32, [])
-        self._nvvm_tid_y = declare_nvvm("llvm.nvvm.read.ptx.sreg.tid.y", i32, [])
-        self._nvvm_tid_z = declare_nvvm("llvm.nvvm.read.ptx.sreg.tid.z", i32, [])
-        self._nvvm_ntid_x = declare_nvvm("llvm.nvvm.read.ptx.sreg.ntid.x", i32, [])
-        self._nvvm_ntid_y = declare_nvvm("llvm.nvvm.read.ptx.sreg.ntid.y", i32, [])
-        self._nvvm_ntid_z = declare_nvvm("llvm.nvvm.read.ptx.sreg.ntid.z", i32, [])
-        self._nvvm_ctaid_x = declare_nvvm("llvm.nvvm.read.ptx.sreg.ctaid.x", i32, [])
-        self._nvvm_ctaid_y = declare_nvvm("llvm.nvvm.read.ptx.sreg.ctaid.y", i32, [])
-        self._nvvm_ctaid_z = declare_nvvm("llvm.nvvm.read.ptx.sreg.ctaid.z", i32, [])
-        self._nvvm_nctaid_x = declare_nvvm("llvm.nvvm.read.ptx.sreg.nctaid.x", i32, [])
-        self._nvvm_nctaid_y = declare_nvvm("llvm.nvvm.read.ptx.sreg.nctaid.y", i32, [])
-        self._nvvm_nctaid_z = declare_nvvm("llvm.nvvm.read.ptx.sreg.nctaid.z", i32, [])
-        self._nvvm_laneid = declare_nvvm("llvm.nvvm.read.ptx.sreg.laneid", i32, [])
-        self._nvvm_warpid = declare_nvvm("llvm.nvvm.read.ptx.sreg.warpid", i32, [])
-        self._nvvm_warpsize = declare_nvvm("llvm.nvvm.read.ptx.sreg.warpsize", i32, [])
-        self._nvvm_activemask = declare_nvvm("llvm.nvvm.read.ptx.sreg.activemask", i32, [])
-        self._nvvm_lanemask_eq = declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.eq", i32, [])
-        self._nvvm_lanemask_le = declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.le", i32, [])
-        self._nvvm_lanemask_lt = declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.lt", i32, [])
-        self._nvvm_lanemask_ge = declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.ge", i32, [])
-        self._nvvm_lanemask_gt = declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.gt", i32, [])
+        self._nvvm_tid_x = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.tid.x", i32, [])
+        self._nvvm_tid_y = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.tid.y", i32, [])
+        self._nvvm_tid_z = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.tid.z", i32, [])
+        self._nvvm_ntid_x = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.ntid.x", i32, [])
+        self._nvvm_ntid_y = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.ntid.y", i32, [])
+        self._nvvm_ntid_z = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.ntid.z", i32, [])
+        self._nvvm_ctaid_x = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.ctaid.x", i32, [])
+        self._nvvm_ctaid_y = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.ctaid.y", i32, [])
+        self._nvvm_ctaid_z = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.ctaid.z", i32, [])
+        self._nvvm_nctaid_x = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.nctaid.x", i32, [])
+        self._nvvm_nctaid_y = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.nctaid.y", i32, [])
+        self._nvvm_nctaid_z = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.nctaid.z", i32, [])
+        self._nvvm_laneid = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.laneid", i32, [])
+        self._nvvm_warpid = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.warpid", i32, [])
+        self._nvvm_warpsize = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.warpsize", i32, [])
+        self._nvvm_activemask = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.activemask", i32, [])
+        self._nvvm_lanemask_eq = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.eq", i32, [])
+        self._nvvm_lanemask_le = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.le", i32, [])
+        self._nvvm_lanemask_lt = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.lt", i32, [])
+        self._nvvm_lanemask_ge = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.ge", i32, [])
+        self._nvvm_lanemask_gt = self.Declare_nvvm("llvm.nvvm.read.ptx.sreg.lanemask.gt", i32, [])
 
         # Synchronization and warp-specialized intrinsics
-        self._nvvm_barrier0 = declare_nvvm("llvm.nvvm.barrier0", self.ir.VoidType(), [])
-        self._nvvm_shfl_sync_down_i32 = declare_nvvm("llvm.nvvm.shfl.sync.down.i32", i32, [i32, i32, i32, i32])
-        self._nvvm_shfl_sync_up_i32 = declare_nvvm("llvm.nvvm.shfl.sync.up.i32", i32, [i32, i32, i32, i32])
-        self._nvvm_shfl_sync_bfly_i32 = declare_nvvm("llvm.nvvm.shfl.sync.bfly.i32", i32, [i32, i32, i32, i32])
-        self._nvvm_shfl_sync_idx_i32 = declare_nvvm("llvm.nvvm.shfl.sync.idx.i32", i32, [i32, i32, i32, i32])
-        self._nvvm_vote_any_sync = declare_nvvm("llvm.nvvm.vote.any.sync", self.ir.IntType(1), [i32, self.ir.IntType(1)])
-        self._nvvm_vote_all_sync = declare_nvvm("llvm.nvvm.vote.all.sync", self.ir.IntType(1), [i32, self.ir.IntType(1)])
-        self._nvvm_vote_uni_sync = declare_nvvm("llvm.nvvm.vote.uni.sync", self.ir.IntType(1), [i32, self.ir.IntType(1)])
-        self._nvvm_vote_ballot_sync = declare_nvvm("llvm.nvvm.vote.ballot.sync", i32, [i32, self.ir.IntType(1)])
-        self._nvvm_match_any_sync_i32 = declare_nvvm("llvm.nvvm.match.any.sync.i32", i32, [i32, i32])
-        self._nvvm_match_any_sync_i64 = declare_nvvm("llvm.nvvm.match.any.sync.i64", i32, [i32, self.ir.IntType(64)])
-        self._nvvm_brev32 = declare_nvvm("llvm.nvvm.brev32", i32, [i32])
-        self._nvvm_brev64 = declare_nvvm("llvm.nvvm.brev64", self.ir.IntType(64), [self.ir.IntType(64)])
-        self._nvvm_prmt = declare_nvvm("llvm.nvvm.prmt", i32, [i32, i32, i32])
+        self._nvvm_barrier0 = self.Declare_nvvm("llvm.nvvm.barrier0", self.ir.VoidType(), [])
+        self._nvvm_vote_any_sync = self.Declare_nvvm("llvm.nvvm.vote.any.sync", self.ir.IntType(1), [i32, self.ir.IntType(1)])
+        self._nvvm_vote_all_sync = self.Declare_nvvm("llvm.nvvm.vote.all.sync", self.ir.IntType(1), [i32, self.ir.IntType(1)])
+        self._nvvm_vote_uni_sync = self.Declare_nvvm("llvm.nvvm.vote.uni.sync", self.ir.IntType(1), [i32, self.ir.IntType(1)])
+        self._nvvm_vote_ballot_sync = self.Declare_nvvm("llvm.nvvm.vote.ballot.sync", i32, [i32, self.ir.IntType(1)])
+        self._nvvm_match_any_sync_i32 = self.Declare_nvvm("llvm.nvvm.match.any.sync.i32", i32, [i32, i32])
+        self._nvvm_match_any_sync_i64 = self.Declare_nvvm("llvm.nvvm.match.any.sync.i64", i32, [i32, self.ir.IntType(64)])
+        self._nvvm_brev32 = self.Declare_nvvm("llvm.nvvm.brev32", i32, [i32])
+        self._nvvm_brev64 = self.Declare_nvvm("llvm.nvvm.brev64", self.ir.IntType(64), [self.ir.IntType(64)])
+        self._nvvm_prmt = self.Declare_nvvm("llvm.nvvm.prmt", i32, [i32, i32, i32])
 
         # Constant, shared, and local memories in proper NVVM address spaces
         BankTy = self.ir.ArrayType(self.ir.IntType(8), 4096)
         ConstMemTy  = self.ir.ArrayType(BankTy, 5)
-        self.ConstMem = self.ir.GlobalVariable(llvm_module, ConstMemTy, "const_mem")
-        self.ConstMem.address_space = 4
+        self.ConstMem = self.ir.GlobalVariable(llvm_module, ConstMemTy, "const_mem", 4)
         self.ConstMem.global_constant = True
 
-        SharedArrayTy = self.ir.ArrayType(self.ir.IntType(32), 49152)
-        self.SharedMem = self.ir.GlobalVariable(llvm_module, SharedArrayTy, "shared_mem")
-        self.SharedMem.address_space = 3
+        SharedArrayTy = self.ir.ArrayType(self.ir.IntType(32), 4096)
+        self.SharedMem = self.ir.GlobalVariable(llvm_module, SharedArrayTy, "shared_mem", 3)
 
-        LocalArrayTy = self.ir.ArrayType(self.ir.IntType(8), 32768)
-        self.LocalMem = self.ir.GlobalVariable(llvm_module, LocalArrayTy, "local_mem")
-        self.LocalMem.address_space = 5
+        LocalArrayTy = self.ir.ArrayType(self.ir.IntType(8), 4096)
+        self.LocalMem = self.ir.GlobalVariable(llvm_module, LocalArrayTy, "local_mem", 5)
 
-        # General helper functions kept from the legacy lifter
-        self.DeviceFuncs = {}
 
         FuncTy = self.ir.FunctionType(
             self.ir.IntType(1),
@@ -223,10 +221,10 @@ class NVVMLifter(Lifter):
                     val = self.ir.Constant(op.GetIRType(self), 1)
                 else:
                     ir_name = op.GetIRName(self)
-                    if ir_name not in ir_regs:
-                        val = rough_search(op)
-                    else:
-                        val = ir_regs[ir_name]
+                    # if ir_name not in ir_regs:
+                    #     val = rough_search(op)
+                    # else:
+                    val = ir_regs[ir_name]
                 ir_inst.add_incoming(val, block_map[pred_bb])
 
     def _addrspace_pointer(self, builder, value, pointee_ty, addrspace, name):
@@ -297,13 +295,10 @@ class NVVMLifter(Lifter):
             if op.IsRZ:
                 return self.ir.Constant(op.GetIRType(self), 0)
             if op.IsPT:
-                return self.ir.Constant(op.GetIRType(self), 1)
+                return self.ir.Constant(op.GetIRType(self), not op.IsNotReg)
             if op.IsReg:
                 irName = op.GetIRName(self)
-                if irName not in IRRegs:
-                    val = roughSearch(op)
-                else:
-                    val = IRRegs[irName]
+                val = IRRegs[irName]
                     
                 if op.IsNegativeReg:
                     if op.GetTypeDesc().startswith('F'):
@@ -432,10 +427,10 @@ class NVVMLifter(Lifter):
             v2 = _get_val(uses[1], "fmnmx_rhs")
             pred = Inst.GetUses()[2]
             if pred.IsPT:
-                r = IRBuilder.fcmp_ordered("<", v1, v2, "fmnmx")
+                r = IRBuilder.fcmp_ordered(">", v1, v2, "fmnmx")
                 IRRegs[dest.GetIRName(self)] = IRBuilder.select(r, v1, v2, "fmnmx_select")
             else:
-                r = IRBuilder.fcmp_unordered(">", v1, v2, "fmnmx")
+                r = IRBuilder.fcmp_ordered("<", v1, v2, "fmnmx")
                 IRRegs[dest.GetIRName(self)] = IRBuilder.select(r, v1, v2, "fmnmx_select")
             
         elif opcode == "FCHK":
@@ -524,9 +519,36 @@ class NVVMLifter(Lifter):
         elif opcode == "SHF" or opcode == "USHF":
             dest = Inst.GetDefs()[0]
             uses = Inst.GetUses()
-            v1 = _get_val(uses[0], "shf_lhs")
-            v2 = _get_val(uses[1], "shf_rhs")
-            IRRegs[dest.GetIRName(self)] = IRBuilder.shl(v1, v2, "shf")
+            v1 = _get_val(uses[0], "shf_lo")
+            v2 = _get_val(uses[1], "shf_shift")
+            v3 = _get_val(uses[2], "shf_hi")
+            
+            # concatentate lo and hi
+            lo64 = IRBuilder.zext(v1, self.ir.IntType(64))
+            hi64 = IRBuilder.zext(v3, self.ir.IntType(64))
+            v = IRBuilder.or_(
+                lo64,
+                IRBuilder.shl(hi64, self.ir.Constant(self.ir.IntType(64), 32)),
+                "shf_concat"
+            )
+            
+            v2 = IRBuilder.zext(v2, self.ir.IntType(64), "shf_shift_64")
+
+            
+            right = Inst.opcodes[1] == "R"
+            signed = "S" in Inst.opcodes[2]
+            high = "HI" in Inst.opcodes
+            if right:
+                if signed:
+                    r = IRBuilder.ashr(v, v2)
+                else:
+                    r = IRBuilder.lshr(v, v2)
+            else:
+                r = IRBuilder.shl(v, v2)
+            
+            if high:
+                r = IRBuilder.lshr(r, self.ir.Constant(self.ir.IntType(64), 32), "shf_hi")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.trunc(r, dest.GetIRType(self), "shf_result")
                 
         elif opcode == "IADD":
             dest = Inst.GetDefs()[0]
@@ -655,6 +677,12 @@ class NVVMLifter(Lifter):
             ptr = Inst.GetUses()[0]
             addr = _get_val(ptr, "lds_addr")
             addr = IRBuilder.gep(self.SharedMem, [self.ir.Constant(self.ir.IntType(32), 0), addr], "lds_shared_addr")
+            if addr.type.pointee != dest.GetIRType(self):
+                addr = IRBuilder.bitcast(
+                    addr,
+                    self.ir.PointerType(dest.GetIRType(self), 3),
+                    "lds_shared_addr_cast",
+                )
             val = IRBuilder.load(addr, "lds", typ=dest.GetIRType(self))
             IRRegs[dest.GetIRName(self)] = val
 
@@ -910,87 +938,59 @@ class NVVMLifter(Lifter):
 
                     
         elif opcode == "LOP3" or opcode == "ULOP3" or opcode == "PLOP3" or opcode == "UPLOP3":
-            # Lower LOP3.LUT for both register and predicate destinations.
-            dest = Inst.GetDefs()[0]
+            
+            if Inst.opcodes[1] != "LUT":
+                raise UnsupportedInstructionException
+            
+            
+            destPred = Inst.GetDefs()[0] if len(Inst.GetDefs()) > 1 else None
+            destReg = Inst.GetDefs()[-1]
             src1, src2, src3 = Inst.GetUses()[0], Inst.GetUses()[1], Inst.GetUses()[2]
-            func = Inst._opcodes[1] if len(Inst._opcodes) > 1 else None
-
-            if func != "LUT":
-                raise UnsupportedInstructionException
-
-            # Find the LUT immediate among uses (last immediate before any PT operand)
-            imm8 = None
-            for op in reversed(Inst.GetUses()):
-                if op.IsImmediate:
-                    imm8 = op.ImmediateValue & 0xFF
-                    break
-            if imm8 is None:
-                raise UnsupportedInstructionException
+            
+            lut = Inst.GetUses()[3]
+            src4 = Inst.GetUses()[4]
 
             a = _get_val(src1, "lop3_a")
             b = _get_val(src2, "lop3_b")
             c = _get_val(src3, "lop3_c")
+            q = _get_val(src4, "lop3_q")
 
-            # Sum-of-products bitwise construction for 32-bit result
-            zero = self.ir.Constant(b.type, 0)
-            # Fast-path a-agnostic mask used frequently: imm8 == 0xC0 -> b & c
-            if imm8 == 0xC0:
-                res32 = IRBuilder.and_(b, c, "lop3_bc")
-            else:
-                nota = IRBuilder.not_(a, "lop3_nota")
-                notb = IRBuilder.not_(b, "lop3_notb")
-                notc = IRBuilder.not_(c, "lop3_notc")
-                res32 = zero
-                for idx in range(8):
-                    if ((imm8 >> idx) & 1) == 0:
-                        continue
-                    xa = a if (idx & 1) else nota
-                    xb = b if (idx & 2) else notb
-                    xc = c if (idx & 4) else notc
-                    tmp = IRBuilder.and_(xa, xb, f"lop3_and_ab_{idx}")
-                    tmp = IRBuilder.and_(tmp, xc, f"lop3_and_abc_{idx}")
-                    res32 = IRBuilder.or_(res32, tmp, f"lop3_or_{idx}")
+            lut_val = lut.ImmediateValue
+            
+            na = IRBuilder.xor(a, self.ir.Constant(a.type, -1))
+            nb = IRBuilder.xor(b, self.ir.Constant(b.type, -1))
+            nc = IRBuilder.xor(c, self.ir.Constant(c.type, -1))
+            
+            zero = self.ir.Constant(destReg.GetIRType(self), 0)
+            r = zero
+            
+            for idx in range(8):
+                if (lut_val >> idx) & 1 == 0:
+                    continue 
 
-            if dest.IsPredicateReg:
-                # For P-dest, prefer a safe minimal lowering:
-                #  - Recognize imm8==0xC0 -> (B & C) != 0 (matches loop3).
-                #  - Otherwise, approximate with 1-bit LUT lookup of (LSB(A),LSB(B),LSB(C)).
-                uses = Inst.GetUses()
-                c_is_imm = len(uses) >= 3 and uses[2].IsImmediate
-                if imm8 == 0xC0 and c_is_imm:
-                    mask = IRBuilder.and_(b, c, "lop3_bc_mask")
-                    pred = IRBuilder.icmp_unsigned("!=", mask, zero, "lop3_pred")
-                    IRRegs[dest.GetIRName(self)] = pred
+                # idx = (a_bit << 2) | (b_bit << 1) | c_bit
+                a_bit = (idx >> 2) & 1
+                b_bit = (idx >> 1) & 1
+                c_bit = idx        & 1
+
+                va = a  if a_bit else na
+                vb = b  if b_bit else nb
+                vc = c  if c_bit else nc
+
+                t_ab   = IRBuilder.and_(va, vb)
+                t_term = IRBuilder.and_(t_ab, vc)
+
+                if r is zero:
+                    r = t_term
                 else:
-                    one_i32 = self.ir.Constant(a.type, 1)
-                    a_lsb_i32 = IRBuilder.and_(a, one_i32, "lop3_a_lsb")
-                    b_lsb_i32 = IRBuilder.and_(b, one_i32, "lop3_b_lsb")
-                    c_lsb_i32 = IRBuilder.and_((c if c.type == a.type else IRBuilder.zext(c, a.type, "lop3_c_zext")), one_i32, "lop3_c_lsb")
-                    a0 = IRBuilder.icmp_unsigned("!=", a_lsb_i32, self.ir.Constant(a.type, 0), "lop3_a0")
-                    b0 = IRBuilder.icmp_unsigned("!=", b_lsb_i32, self.ir.Constant(b.type, 0), "lop3_b0")
-                    c0 = IRBuilder.icmp_unsigned("!=", c_lsb_i32, self.ir.Constant(a.type, 0), "lop3_c0")
-                    a0_i32 = IRBuilder.sext(a0, a.type)
-                    b0_i32 = IRBuilder.sext(b0, b.type)
-                    c0_i32 = IRBuilder.sext(c0, a.type)
-                    idx = IRBuilder.or_(
-                        a0_i32,
-                        IRBuilder.or_(
-                            IRBuilder.shl(b0_i32, self.ir.Constant(b.type, 1)),
-                            IRBuilder.shl(c0_i32, self.ir.Constant(a.type, 2))
-                        ),
-                        "lop3_idx"
-                    )
-                    imm_i32 = self.ir.Constant(a.type, imm8 & 0xFF)
-                    bit_i32 = IRBuilder.and_(
-                        IRBuilder.lshr(imm_i32, idx, "lop3_lut_shift"),
-                        self.ir.Constant(a.type, 1),
-                        "lop3_lut_bit"
-                    )
-                    pred = IRBuilder.icmp_unsigned("!=", bit_i32, self.ir.Constant(a.type, 0), "lop3_pred")
-                    IRRegs[dest.GetIRName(self)] = pred
-            else:
-                IRRegs[dest.GetIRName(self)] = res32
+                    r = IRBuilder.or_(r, t_term)
 
+            if destReg.IsWritableReg:
+                IRRegs[destReg.GetIRName(self)] = r
+                
+            if destPred and destPred.IsWritableReg:
+                tmp = IRBuilder.icmp_signed('!=', r, zero, "lop3_pred_cmp")
+                IRRegs[destPred.GetIRName(self)] = IRBuilder.or_(tmp, q, "lop3_p")
 
         elif opcode == "MOVM":
             # TODO: dummy implementation
@@ -1033,19 +1033,7 @@ class NVVMLifter(Lifter):
         elif opcode == "ULDC" or opcode == "ULDC64" or opcode == "LDC":
             dest = Inst.GetDefs()[0]
             src = Inst.GetUses()[0]
-            if src.IsArg:
-                val = _get_val(src, "ldc_const")
-            else:
-                addr = _get_val(src, "ldc_addr")
-                pointee_ty = dest.GetIRType(self)
-                addr_ptr = _as_pointer(
-                    addr,
-                    pointee_ty,
-                    f"{src.GetIRName(self)}_addr_ptr" if src.IsReg else "ldc_addr_ptr",
-                    addrspace=4,
-                )
-                val = IRBuilder.load(addr_ptr, "ldc", typ=pointee_ty)
-            IRRegs[dest.GetIRName(self)] = val
+            IRRegs[dest.GetIRName(self)] = _get_val(src, "ldc_const")
         
         elif opcode == "CS2R":
             # CS2R (Convert Special Register to Register)
@@ -1271,18 +1259,15 @@ class NVVMLifter(Lifter):
             
         elif opcode == "VOTE" or opcode == "VOTEU":
             dest = Inst.GetDefs()[0]
-            pred_val = _get_val(Inst.GetUses()[0], "vote_pred")
-            mask_val = _get_val(Inst.GetUses()[1], "vote_mask")
+            mask_op, pred_op = Inst.GetUses()[0], Inst.GetUses()[1]
 
-            if pred_val.type != self.ir.IntType(1):
-                zero = self.ir.Constant(pred_val.type, 0)
-                pred_val = IRBuilder.icmp_unsigned("!=", pred_val, zero, "vote_pred_i1")
-
-            if mask_val.type != self.ir.IntType(32):
-                if hasattr(mask_val.type, "width") and mask_val.type.width > 32:
-                    mask_val = IRBuilder.trunc(mask_val, self.ir.IntType(32), "vote_mask_i32")
-                else:
-                    mask_val = IRBuilder.zext(mask_val, self.ir.IntType(32), "vote_mask_i32")
+            pred_val = _get_val(pred_op, "vote_pred")
+            mask_val = _get_val(mask_op, "vote_mask")
+            
+            if mask_op.IsPT and not mask_op.IsNotReg:
+                mask_val = self.ir.Constant(self.ir.IntType(32), -1)
+            else:
+                mask_val = _get_val(mask_op, "vote_mask")
 
             mode = Inst.opcodes[1].upper()
 
@@ -1340,58 +1325,38 @@ class NVVMLifter(Lifter):
             
             mode = Inst.opcodes[1].upper()
             
+            dtype = destReg.GetIRType(self)
             i32 = self.ir.IntType(32)
             mask_const = self.ir.Constant(i32, 0xFFFFFFFF)
-
-            if val.type != i32:
-                if hasattr(val.type, "width") and val.type.width == 32:
-                    shfl_input = IRBuilder.bitcast(val, i32, "shfl_val_i32")
-                elif hasattr(val.type, "width") and val.type.width > 32:
-                    shfl_input = IRBuilder.trunc(val, i32, "shfl_val_i32")
-                else:
-                    shfl_input = IRBuilder.zext(val, i32, "shfl_val_i32")
-            else:
-                shfl_input = val
-
-            if off.type != i32:
-                if hasattr(off.type, "width") and off.type.width > 32:
-                    off = IRBuilder.trunc(off, i32, "shfl_off_i32")
-                else:
-                    off = IRBuilder.zext(off, i32, "shfl_off_i32")
-
-            if wid.type != i32:
-                if hasattr(wid.type, "width") and wid.type.width > 32:
-                    wid = IRBuilder.trunc(wid, i32, "shfl_width_i32")
-                else:
-                    wid = IRBuilder.zext(wid, i32, "shfl_width_i32")
+            
+            func_name = "llvm.nvvm.shfl.sync." + mode.lower() + "." + dtype.intrinsic_name
 
             if mode == "DOWN":
-                shfl_intr = self._nvvm_shfl_sync_down_i32
+                shfl_intr = self.Declare_nvvm(func_name, dtype, [i32, dtype, i32, i32])
                 shfl_name = "shfl_down"
             elif mode == "UP":
-                shfl_intr = self._nvvm_shfl_sync_up_i32
+                shfl_intr = self.Declare_nvvm(func_name, dtype, [i32, dtype, i32, i32])
                 shfl_name = "shfl_up"
             elif mode == "BFLY":
-                shfl_intr = self._nvvm_shfl_sync_bfly_i32
+                shfl_intr = self.Declare_nvvm(func_name, dtype, [i32, dtype, i32, i32])
                 shfl_name = "shfl_bfly"
             elif mode == "IDX":
-                shfl_intr = self._nvvm_shfl_sync_idx_i32
+                shfl_intr = self.Declare_nvvm(func_name, dtype, [i32, dtype, i32, i32])
                 shfl_name = "shfl_idx"
             else:
                 raise UnsupportedInstructionException
 
             shflVal = IRBuilder.call(
                 shfl_intr,
-                [mask_const, shfl_input, off, wid],
+                [mask_const, val, off, wid],
                 shfl_name,
             )
 
             dest_type = destReg.GetIRType(self)
-            if dest_type != i32:
-                shflVal = IRBuilder.bitcast(shflVal, dest_type, f"{shfl_name}_cast")
 
             IRRegs[destReg.GetIRName(self)] = shflVal
-            IRRegs[destPred.GetIRName(self)] = self.ir.Constant(self.ir.IntType(1), 1)
+            if not destPred.IsPT:
+                IRRegs[destPred.GetIRName(self)] = self.ir.Constant(self.ir.IntType(1), 1)
 
         elif opcode == "MATCH":
             dest = Inst.GetDefs()[0]
@@ -1765,7 +1730,7 @@ class NVVMLifter(Lifter):
             return self.ir.DoubleType()
         elif TypeDesc == "Float64_PTR":
             return self.ir.PointerType(self.ir.DoubleType(), 1)
-        elif TypeDesc == "Int1":
+        elif TypeDesc == "Bool":
             return self.ir.IntType(1)
         elif TypeDesc == "PTR":
             return self.ir.PointerType(self.ir.IntType(8), 1)

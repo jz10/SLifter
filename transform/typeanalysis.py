@@ -2,134 +2,184 @@ from transform.transform import SaSSTransform
 from sir.operand import Operand
 from collections import deque
 from sir.instruction import Instruction
+from transform.defuse_analysis import DefUseAnalysis
+
+# Type domains
+BOOL = {"Bool"}
+HALF2 = {"Half2"}
+FLOAT16 = {"Float16"}
+FLOAT32 = {"Float32"}
+FLOAT64 = {"Float64"}
+INT32 = {"Int32"}
+INT64 = {"Int64"}
+
+NUM1 = BOOL
+NUM32 = INT32 | FLOAT32 | HALF2
+NUM64 = INT64 | FLOAT64
+TOP = NUM32 | NUM1 | NUM64
+BOTTOM = set()
+
 
 class TypeAnalysis(SaSSTransform):
+
+    """
+    Modified TypeAnalysis that:
+    - does not introduce pointer types,
+    - assumes conflicts only occur among same width (e.g., Int32 vs Float32; Int64 vs Float64),
+    - defers conflicts and repairs them by inserting BITCASTs at use sites (or PHI edges),
+    - chooses a canonical type per SSA def to ensure a single register type in the final IR.
+    """
+
     def __init__(self):
         super().__init__()
 
-        # operands with PROP must have the same type
-        # operands with PROP_PTR must have the same type but with _PTR suffix(unused for now)
-        # address operands are represented as Int64 and cast to pointers in the lifter
-        # operands with ANY can have any type
+        # Static instruction type table (unchanged; no pointer types)
         self.instructionTypeTable = {
-            "S2R": [["Int32"], ["Int32", "Int32"]],
-            "IMAD": [["Int32"], ["Int32", "Int32", "Int32"]],
-            "IADD3": [["Int32"], ["Int32", "Int32", "Int32"]],
-            "XMAD": [["Int32"], ["Int32", "Int32", "Int32"]],
-            "IADD32I": [["Int32"], ["Int32", "Int32"]],
-            "MOV": [["PROP"], ["PROP"]],
-            "IADD": [["Int32"], ["Int32", "Int32"]],
-            "ISETP": [["Int1"], ["PROP", "PROP", "PROP", "PROP"]],
-            "AND": [["PROP"], ["PROP", "PROP"]],
-            "OR": [["PROP"], ["PROP", "PROP"]],
-            "XOR": [["PROP"], ["PROP", "PROP"]],
-            "NOT": [["PROP"], ["PROP", "PROP"]],
-            "LEA": [["Int32"], ["Int32", "Int32"]],
-            "SHL": [["PROP"], ["PROP", "PROP"]],
-            "SHR": [["PROP"], ["PROP", "PROP"]],
-            "LOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
-            "LDG": [["PROP"], ["Int64"]],
-            "LD": [["PROP"], ["Int64"]],
-            "SULD": [["PROP"], ["Int64"]],
-            "STG": [[], ["Int64", "PROP"]],
-            "ST": [[], ["Int64", "PROP"]],
-            "SUST": [[], ["Int64", "PROP"]],
-            "F2I": [["Int32"], ["Float32"]],
-            "I2F": [["Float32"], ["Int32"]],
-            "SEL": [["Int32"], ["Int32", "Int32", "Int1"]],
+            "S2R": [[INT32], [INT32, INT32]],
+            "IMAD": [[INT32], [INT32, INT32, INT32]],
+            "IADD3": [[INT32], [INT32, INT32, INT32]],
+            "XMAD": [[INT32], [INT32, INT32, INT32]],
+            "IADD32I": [[INT32], [INT32, INT32]],
+            "IADD": [[INT32], [INT32, INT32]],
+            "ISETP": [[BOOL, BOOL], [INT32, INT32, BOOL, BOOL]],
+            "LEA": [[INT32, BOOL], [INT32, INT32, INT32]],
+            "LOP3": [[INT32, INT32], [INT32, INT32, INT32, INT32, INT32, BOOL]],
+            "LDG": [[NUM32], [INT64]],
+            "LD": [[NUM32], [INT64]],
+            "SULD": [[NUM32], [INT64]],
+            "STG": [[], [INT64, NUM32]],
+            "ST": [[], [INT64, NUM32]],
+            "SUST": [[], [INT64, NUM32]],
+            "F2I": [[INT32], [FLOAT32]],
+            "I2F": [[FLOAT32], [INT32]],
+            "SEL": [[INT32], [INT32, INT32, BOOL]],
             "NOP": [[], []],
-            "BRA": [[], []],
+            "BRA": [[], [TOP, INT32]],
             "EXIT": [[], []],
             "RET": [[], []],
             "SYNC": [[], []],
-            "BAR": [[], []],
+            "BAR": [[], [INT32]],
             "SSY": [[], []],
-            "SHF": [["Int32"], ["Int32", "Int32", "Int32"]],
-            "SHFL": [["Int1", "Int32"], ["Int32", "Int32", "Int32"]],
+            "SHF": [[INT32], [INT32, INT32, INT32]],
             "DEPBAR": [[], []],
-            "LOP32I": [["Int32"], ["Int32", "Int32"]],
-            "ISCADD": [["Int32"], ["Int32", "Int32"]],
-            "MOV32I": [["Int32"], ["Int32"]],
-            "IABS": [["Int32"], ["Int32"]],
-            "ULDC": [["PROP"], ["PROP"]],
-            "DMUL": [["Float64"], ["Float64", "Float64"]],
-            "DFMA": [["Float64"], ["Float64", "Float64", "Float64"]],
-            "LDS": [["PROP"], ["Int32"]],
-            "STS": [[], ["Int32", "PROP"]],
-            "VOTE": [["Int32"], ["Int1", "Int1"]],
-            "VOTEU": [["Int32"], ["Int1", "Int1"]],
-            "MATCH": [["Int32"], ["Int32"]],
-            "BREV": [["Int32"], ["Int32"]],
-            "FLO": [["Int32"], ["Int32"]],
-            "POPC": [["Int32"], ["Int32"]],
-            "RED": [[], ["Int64", "Int32"]],
-            "IMNMX": [["Int32"], ["Int32", "Int32"]],
-            "PRMT": [["Int32"], ["Int32", "Int32", "Int32"]],
-            "PLOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
-            "HMMA": [["Float32"] * 4, ["Float32"] * 8],
-            "MOVM": [["PROP"], ["PROP"]],
-            
+            "LOP32I": [[INT32], [INT32, INT32]],
+            "ISCADD": [[INT32], [INT32, INT32]],
+            "MOV32I": [[INT32], [INT32]],
+            "IABS": [[INT32], [INT32]],
+            "ULDC": [[NUM32], [INT32]],
+            "MATCH": [[INT32], [INT32]],
+            "BREV": [[INT32], [INT32]],
+            "FLO": [[INT32], [INT32]],
+            "POPC": [[INT32], [INT32]],
+            "RED": [[], [INT64, INT32]],
+            "IMNMX": [[INT32], [INT32, INT32, BOOL]],
+            "PRMT": [[INT32], [NUM32, NUM32, NUM32]],
+            "HMMA": [[FLOAT32] * 4, [FLOAT32] * 8],
+            "MOV": [[NUM32], [NUM32]],
+            "SHL": [[INT32], [INT32, INT32]],
+
+            # Predicate instructions
+            "PLOP3": [[BOOL, BOOL], [BOOL, BOOL, BOOL, INT32, BOOL]],
+
+            # Shared memory
+            "LDS": [[NUM32], [INT32]],
+            "STS": [[], [INT32, NUM32]],
+
+            # Warp-level primitives
+            "SHFL": [[BOOL, NUM32], [NUM32, INT32, INT32]],
+            "VOTE": [[INT32], [BOOL, BOOL]],
+            "VOTEU": [[INT32], [BOOL, BOOL]],
+
+            "MOV64": [[NUM64], [NUM64]],
+            "PHI64": [[NUM64], [NUM64, NUM64, NUM64, NUM64, NUM64, NUM64]],
+            "PHI": [[NUM32], [NUM32, NUM32, NUM32, NUM32, NUM32, NUM32]],
+
             # Float instruction types
-            "FADD": [["Float32"], ["Float32", "Float32"]],
-            "FFMA": [["Float32"], ["Float32", "Float32", "Float32"]],
-            "FMUL": [["Float32"], ["Float32", "Float32"]],
-            "FSETP": [["Int1", "Int1"], ["Float32", "Float32", "Int1"]],
-            "FSEL": [["Float32"], ["Float32", "Float32", "Int1"]],
-            "MUFU": [["Float32"], ["Float32"]],
-            "FCHK": [["Int1"], ["Float32", "Int32"]],
-            
+            "FADD": [[FLOAT32], [FLOAT32, FLOAT32]],
+            "FFMA": [[FLOAT32], [FLOAT32, FLOAT32, FLOAT32]],
+            "FMUL": [[FLOAT32], [FLOAT32, FLOAT32]],
+            "FSETP": [[BOOL, BOOL], [FLOAT32, FLOAT32, BOOL]],
+            "FSEL": [[FLOAT32], [FLOAT32, FLOAT32, BOOL]],
+            "MUFU": [[FLOAT32], [FLOAT32]],
+            "FCHK": [[BOOL], [FLOAT32, INT32]],
+            "FMNMX": [[FLOAT32], [FLOAT32, FLOAT32, FLOAT32, BOOL]],
+
             # Double instruction types
-            "DADD": [["Float64"], ["Float64", "Float64"]],
-            "DMUL": [["Float64"], ["Float64", "Float64"]],
-            "DFMA": [["Float64"], ["Float64", "Float64", "Float64"]],
-            "DSETP": [["Int1", "Int1"], ["Float64", "Float64", "Int1"]],
+            "DADD": [[FLOAT64], [FLOAT64, FLOAT64]],
+            "DMUL": [[FLOAT64], [FLOAT64, FLOAT64]],
+            "DFMA": [[FLOAT64], [FLOAT64, FLOAT64, FLOAT64]],
+            "DSETP": [[BOOL, BOOL], [FLOAT64, FLOAT64, BOOL]],
 
             # Uniform variants
-            "USHF": [["Int32"], ["Int32", "Int32", "Int32"]],
-            "ULEA": [["Int32"], ["Int32", "Int32"]],
-            "ULOP3": [["PROP"], ["PROP", "PROP", "PROP", "PROP", "PROP"]],
-            "UIADD3": [["Int32"], ["Int32", "Int32", "Int32"]],
-            "UMOV": [["Int32"], ["Int32"]],
-            "UISETP": [["Int1"], ["PROP", "PROP", "PROP", "PROP"]],
-            "USEL": [["Int32"], ["Int32", "Int32", "Int1"]],
+            "USHF": [[INT32], [INT32, INT32, INT32]],
+            "ULEA": [[INT32], [INT32, INT32, INT32, INT32]],
+            "ULOP3": [[INT32], [INT32, INT32, INT32, INT32, INT32, BOOL]],
+            "UIADD3": [[INT32], [INT32, INT32, INT32]],
+            "UMOV": [[INT32], [INT32]],
+            "UISETP": [[BOOL, BOOL], [INT32, INT32, BOOL]],
+            "USEL": [[INT32], [INT32, INT32, BOOL]],
 
             # Dummy instruction types
-            "PHI": [["PROP"], ["PROP", "PROP", "PROP"]],
-            "PACK64": [["Int64"], ["Int32", "Int32"]],
-            "UNPACK64": [["Int32"], ["Int64"]],
-            "CAST64": [["Int64"], ["Int32"]],
-            "IADD64": [["Int64"], ["Int64", "Int64"]],
-            "IMAD64": [["Int64"], ["Int32", "Int32", "Int64"]],
-            "SHL64": [["Int64"], ["Int64", "Int64"]],
-            "MOV64": [["Int64"], ["Int64"]],
-            "IADD32I64": [["Int64"], ["Int64", "Int64"]],
-            "PHI64": [["Int64"], ["Int64", "Int64", "Int64", "Int64"]],
-            "BITCAST": [["ANY"], ["ANY"]],
-            "PBRA": [[], ["Int1"]],
-            "LEA64": [["Int64"], ["Int64", "Int64", "Int64"]],
-            "SETZERO": [["PROP"], []],
-            "ULDC64": [["PROP"], ["PROP"]],
-            "LDG64": [["Int64"], ["Int64"]],
-            "SHR64": [["Int64"], ["Int64", "Int64"]],
-            "ISETP64": [["Int1"], ["PROP", "PROP", "PROP", "PROP"]],
-            "IADD364": [["Int64"], ["Int64", "Int64", "Int64"]],
+            "PACK64": [[NUM64], [NUM32, NUM32]],
+            "UNPACK64": [[NUM32, NUM32], [NUM64]],
+            "CAST64": [[NUM64], [NUM32]],
+            "IADD64": [[INT64], [INT64, INT64]],
+            "IMAD64": [[INT64], [INT32, INT32, INT64]],
+            "SHL64": [[INT64], [INT64, INT64]],
+            "IADD32I64": [[INT64], [INT64, INT32]],
+            "BITCAST": [[TOP], [TOP]],
+            "PBRA": [[], [BOOL, INT32, INT32]],
+            "LEA64": [[INT64], [INT64, INT64, INT64]],
+            "SETZERO": [[TOP], []],
+            "ULDC64": [[NUM64], [INT32]],
+            "LDG64": [[NUM64], [INT64]],
+            "SHR64": [[INT64], [INT64, INT64]],
+            "ISETP64":  [[BOOL, BOOL], [INT64, INT64, BOOL]],
+            "IADD364": [[INT64], [INT64, INT64, INT64]],
         }
 
         self.modifierOverrideTable = {
             "MATCH": {
-                "U32": [["ANY"], ["Int32"]],
-                "U64": [["ANY"], ["Int64"]],
+                "U32": [[TOP], [INT32]],
+                "U64": [[TOP], [INT64]],
             },
             "IMNMX": {
-                "U32": [["Int32"], ["Int32", "Int32"]],
-                "U64": [["Int64"], ["Int64", "Int64"]],
+                "U32": [[INT32], [INT32, INT32]],
+                "U64": [[INT64], [INT64, INT64]],
             },
             "HMMA": {
-                "F32": [["Float32"] * 4, ["Float32"] * 8],
-                "F16": [["Float16"] * 4, ["Float16"] * 8],
+                "F32": [[FLOAT32] * 4, [FLOAT32] * 8],
+                "F16": [[FLOAT16] * 4, [FLOAT16] * 8],
+            },
+            "IMAD": {
+                "WIDE": [[INT64], [INT32, INT32, INT64]],
+            },
+            "STG": {
+                "64": [[], [INT64, NUM64]],
             },
         }
 
+        # Propagation for polymorphic instructions
+        self.propagateTable = {
+            "MOV": [["A"], ["A"]],
+            "AND": [["A"], ["A", "A"]],
+            "OR": [["A"], ["A", "A"]],
+            "XOR": [["A"], ["A", "A"]],
+            "NOT": [["A"], ["A", "A"]],
+            "SHL": [["A"], ["A", "A"]],
+            "SHR": [["A"], ["A", "A"]],
+            "MOVM": [["A"], ["A"]],
+
+            "PHI": [["A"], ["A", "A", "A", "A", "A", "A"]],
+            "PACK64": [["B"], ["A", "A"]],
+            "UNPACK64": [["A", "A"], ["B"]],
+            "PHI64": [["A"], ["A", "A", "A", "A", "A", "A"]],
+            "MOV64": [["A"], ["A"]],
+        }
+
+        # State
+        self.defuse = DefUseAnalysis()
+        self.CanonicalType = {}  # reg -> single-type set (e.g., INT32 or FLOAT32)
 
     def apply(self, module):
         super().apply(module)
@@ -139,143 +189,172 @@ class TypeAnalysis(SaSSTransform):
             self.ProcessFunc(func)
         print("=== End of TypeAnalysis ===")
 
-
     def ProcessFunc(self, function):
-        WorkList = self.TraverseCFG(function)
+        self.WorkList = self.TraverseCFG(function)
+        self.currFunction = function
 
+        # Build def-use upfront
+        self.defuse.BuildDefUse(function.blocks)
+
+        # 1) Static typing
         OpTypes = {}
+        for BB in self.WorkList:
+            for Inst in BB.instructions:
+                self.ResolveTypes(Inst, OpTypes)
 
+        # 2) Propagate to fixed point (soft meets, no immediate edits)
         Changed = True
-
         Iteration = 0
-
-        self.Conflicts = {}
-        # Track registers involved in type conflicts and synthetic bitcast temps
-        self.ConflictedOriginalRegs = set()
-        self.BitcastRegs = set()
-        
-        while Changed:
-
-            # for BB in WorkList:
-            #     for Inst in BB.instructions:
-            #         print(str(Inst)+" => ", end="")
-            #         for Operand in Inst.operands:
-            #             if Operand in OpTypes:
-            #                 TypeDesc = OpTypes[Operand]
-            #             elif Operand.Reg in OpTypes:
-            #                 TypeDesc = OpTypes[Operand.Reg]
-            #             else:
-            #                 TypeDesc = "NOTYPE"
-            #             print(TypeDesc+", ",end="")
-            #         print("")
-
-            # print("-----next iteration-----")
-
+        while Changed and Iteration < 10:
             Changed = False
-
-            for BB in WorkList:
-                Changed |= self.ProcessBB(BB, OpTypes, False)
-            
-            for BB in reversed(WorkList):
-                Changed |= self.ProcessBB(BB, OpTypes, True)
-
-            # Resolve conflict by inserting bitcast
-            for BB in WorkList:
-                NewInstructions = []
-                for Inst in BB.instructions:
-                    if Inst in self.Conflicts:
-                        op, OldType, NewType = self.Conflicts[Inst]
-                        print(f"Warning: Inserting BITCAST to resolve type conflict for {op} in {Inst}: {OldType} vs {NewType}")
-                        # Insert bitcast before Inst
-                        orig_reg = op.Reg
-                        NewRegName = f"{orig_reg}_bitcast"
-
-                        SrcReg = op.Clone()
-                        BitcastReg = Operand.fromReg(NewRegName, NewRegName)
-
-                        BitcastInst = Instruction(
-                            id=f"{Inst.id}_type_resolve", 
-                            opcodes=["BITCAST"],
-                            operands=[BitcastReg, SrcReg],
-                            parentBB=BB
-                        )
-                        NewInstructions.append(BitcastInst)
-
-                        # Book-keeping for statistics
-                        self.ConflictedOriginalRegs.add(orig_reg)
-                        self.BitcastRegs.add(NewRegName)
-
-                        OpTypes[BitcastReg.Reg] = NewType
-                        OpTypes[orig_reg] = OldType
-                        op.SetReg(BitcastReg.Reg)
-
-                        del self.Conflicts[Inst]
-
-                    NewInstructions.append(Inst)
-
-                BB.instructions = NewInstructions
-
+            for BB in self.WorkList:
+                Changed |= self.ProcessBB(BB, OpTypes)
             Iteration += 1
-            if Iteration > 5:
-                print("Warning: TypeAnalysis exceeds 5 iterations, stopping")
-                break
 
-        # Apply types to instructions
-        for BB in WorkList:
+        # 3) Choose canonical type per SSA def (single type per register)
+        self.CanonicalType = self.build_canonical_types(OpTypes)
+
+        # 4) Reconcile uses: insert BITCAST at uses (or PHI-edges) if needed
+        #    under the assumption: conflicts only among same width.
+        if self.reconcile_use_site_casts(function, OpTypes):
+            # IR changed; rebuild def-use, re-run typing + propagation
+            self.defuse.BuildDefUse(function.blocks)
+            OpTypes = {}
+            for BB in self.WorkList:
+                for Inst in BB.instructions:
+                    self.ResolveTypes(Inst, OpTypes)
+            Changed = True
+            Iteration = 0
+            while Changed and Iteration < 5:
+                Changed = False
+                for BB in self.WorkList:
+                    Changed |= self.ProcessBB(BB, OpTypes)
+                Iteration += 1
+            # rebuild canonical types after edits
+            self.CanonicalType = self.build_canonical_types(OpTypes)
+
+        # 5) Attach final TypeDesc to operands based on canonical types or resolved sets
+        for BB in self.WorkList:
             for Inst in BB.instructions:
                 for op in Inst.operands:
-                    if op in OpTypes:
-                        op.TypeDesc = OpTypes[op]
-                    elif op.Reg in OpTypes:
-                        op.TypeDesc = OpTypes[op.Reg]
-                    else:
-                        op.TypeDesc = "NOTYPE"
+                    op.TypeDesc = self.GetTypeDesc(op, OpTypes)
 
-
-        for BB in WorkList:
+        # Debug print (optional)
+        for BB in self.WorkList:
             for Inst in BB.instructions:
-                print(str(Inst)+" => ", end="")
+                descs = []
                 for op in Inst.operands:
-                    print(op.TypeDesc+", ",end="")
-                print("")
-
-        # Statistics
-        # Build AllRegs from the function CFG, then classify:
-        # - If reg in ConflictedOriginalRegs -> Conflicted
-        # - Else if reg in BitcastRegs -> skip (synthetic)
-        # - Else if reg has a type in OpTypes -> count by that type
-        # - Else -> Unresolved
-        AllRegs = set()
-        for BB in WorkList:
-            for Inst in BB.instructions:
-                for op in Inst.operands:
-                    if op.IsWritableReg:
-                        AllRegs.add(op.Reg)
-
-        TypeCount = {}
-        for reg in AllRegs:
-            # Skip synthetic bitcast temps entirely
-            if reg in self.BitcastRegs:
-                continue
-
-            if reg in self.ConflictedOriginalRegs:
-                TypeCount["Conflicted"] = TypeCount.get("Conflicted", 0) + 1
-                continue
-
-            if reg in OpTypes and not isinstance(reg, Operand):
-                tdesc = OpTypes[reg]
-                TypeCount[tdesc] = TypeCount.get(tdesc, 0) + 1
-            else:
-                print(f"Warning: Unresolved type for register {reg}")
-                TypeCount["Unresolved"] = TypeCount.get("Unresolved", 0) + 1
-
-        print("Type analysis statistics")
-        for type_desc, count in TypeCount.items():
-            print(f"Type counts {type_desc}: {count} registers")
+                    descs.append(op.TypeDesc)
+                print(f"{Inst} => {', '.join(descs)}")
 
         print("done")
-        print("=== End of TypeAnalysis ===")
 
+    # --------------------
+    # Core utilities
+    # --------------------
+
+    def GetOptype(self, OpTypes, Operand):
+        if Operand in OpTypes:
+            return OpTypes[Operand]
+        elif Operand.Reg in OpTypes:
+            return OpTypes[Operand.Reg]
+        else:
+            return TOP
+
+    def SetOpType(self, OpTypes, Operand, Type, Inst):
+        # Soft meet: if empty intersection, use union to keep both possibilities.
+        prev = OpTypes.get(Operand.Reg, TOP)
+
+        # Predicates always BOOL
+        if Operand.IsPredicateReg or Operand.IsPT:
+            Type = BOOL
+
+        inter = prev & Type
+        if inter:
+            if Operand.IsWritableReg:
+                OpTypes[Operand.Reg] = inter
+            else:
+                OpTypes[Operand] = inter
+            return
+
+        # Empty meet: do NOT edit IR here. Keep union to retain information.
+        union = prev | Type
+        if Operand.IsWritableReg:
+            OpTypes[Operand.Reg] = union
+        else:
+            OpTypes[Operand] = union
+
+    def ResolveTypes(self, Inst, OpTypes):
+        opcode = Inst.opcodes[0]
+        typeTable = self.instructionTypeTable.get(opcode, None)
+        if not typeTable:
+            # Unknown opcode -> TOP for everything
+            for op in Inst.operands:
+                self.SetOpType(OpTypes, op, TOP, Inst)
+            return
+
+        # Base types
+        def_types, use_types = typeTable
+
+        # Collect base mapping
+        # Defs
+        defs = Inst.GetDefs()
+        for i, defOp in enumerate(defs):
+            if i < len(def_types):
+                t = def_types[i]
+            else:
+                t = TOP
+            self.SetOpType(OpTypes, defOp, t, Inst)
+
+        # Uses
+        uses = Inst.GetUses()
+        for i, useOp in enumerate(uses):
+            if i < len(use_types):
+                t = use_types[i]
+            else:
+                t = TOP
+            self.SetOpType(OpTypes, useOp, t, Inst)
+
+        # Apply modifier overrides
+        modifierTable = self.modifierOverrideTable.get(opcode, None)
+        if modifierTable:
+            for mod in modifierTable:
+                if mod not in Inst.opcodes[1:]:
+                    continue
+                def_overrides, use_overrides = modifierTable[mod]
+                for i, defOp in enumerate(defs):
+                    if i < len(def_overrides):
+                        self.SetOpType(OpTypes, defOp, def_overrides[i], Inst)
+                for i, useOp in enumerate(uses):
+                    if i < len(use_overrides):
+                        self.SetOpType(OpTypes, useOp, use_overrides[i], Inst)
+
+    def ProcessBB(self, BB, OpTypes):
+        old = dict(OpTypes)
+        for Inst in BB.instructions:
+            self.PropagateTypes(Inst, OpTypes)
+        return old != OpTypes
+
+    def PropagateTypes(self, Inst, OpTypes):
+        opcode = Inst.opcodes[0]
+        if opcode not in self.propagateTable:
+            return
+        propTable = self.propagateTable[opcode]
+
+        propOps = {}
+        for i, defOp in enumerate(Inst.GetDefs()):
+            propOps.setdefault(propTable[0][i], []).append(defOp)
+        for i, useOp in enumerate(Inst.GetUses()):
+            propOps.setdefault(propTable[1][i], []).append(useOp)
+
+        for propKey, propOpsList in propOps.items():
+            propType = TOP
+            for propOp in propOpsList:
+                opType = self.GetOptype(OpTypes, propOp)
+                if propType & opType:
+                    propType = propType & opType
+            for propOp in propOpsList:
+                self.SetOpType(OpTypes, propOp, propType, Inst)
 
     def TraverseCFG(self, function):
         EntryBB = function.blocks[0]
@@ -285,188 +364,237 @@ class TypeAnalysis(SaSSTransform):
 
         while Queue:
             CurrBB = Queue.popleft()
-            
             if CurrBB in Visited:
                 continue
-
             Visited.add(CurrBB)
             WorkList.append(CurrBB)
-
             for SuccBB in CurrBB._succs:
                 if SuccBB not in Visited:
                     Queue.append(SuccBB)
 
         return WorkList
-    
 
-    def printTypes(self, types):
-        print("{")
-        for reg, type_desc in types.items():
-            print(f"{reg}: {type_desc}")
+    # --------------------
+    # Canonicalization and reconciliation
+    # --------------------
 
-        print("}")
-        
+    def build_canonical_types(self, OpTypes):
+        Canon = {}
+        for BB in self.WorkList:
+            for Inst in BB.instructions:
+                for defOp in Inst.GetDefs():
+                    reg = defOp.Reg
+                    tset = self.GetOptype(OpTypes, defOp)
+                    Canon[reg] = self.choose_canonical_type(tset)
+        return Canon
 
-    def ProcessBB(self, BB, OpTypes, Reversed):
-        OldOpTypes = OpTypes.copy()
+    def choose_canonical_type(self, tset):
+        # Given a set of possible types, pick one single-type set deterministically.
+        # Assumption: only same-width conflicts matter here.
+        # Prefer exact leaf if singleton.
+        if tset == INT32: return INT32
+        if tset == FLOAT32: return FLOAT32
+        if tset == INT64: return INT64
+        if tset == FLOAT64: return FLOAT64
+        if tset == BOOL: return BOOL
+        if tset == HALF2: return HALF2
 
-        if Reversed:
-            Instructions = reversed(BB.instructions)
-        else:
-            Instructions = BB.instructions
+        # If it's a superset, pick a stable representative by width
+        # For 32-bit family:
+        if tset & NUM32:
+            # Prefer Int32 over Float32 over Half2 over Bool to keep control ops simpler
+            if tset & INT32: return INT32
+            if tset & FLOAT32: return FLOAT32
+            if tset & HALF2: return HALF2
+            if tset & BOOL: return BOOL
+            return INT32  # fallback
+        # For 64-bit family:
+        if tset & NUM64:
+            if tset & INT64: return INT64
+            if tset & FLOAT64: return FLOAT64
+            return INT64  # fallback
 
-        for Inst in Instructions:
-            self.PropagateTypes(Inst, OpTypes)
-        
-        Changed = (OldOpTypes != OpTypes)
-        return Changed
+        # Fallback to INT32 if truly TOP or unknown. Assumption keeps this safe.
+        return INT32
 
-    def SetOptype(self, OpTypes, Operand, TypeDesc):
-        # Do not overwrite e.g. Int32_PTR with generic PTR
-        existing = self.GetOptype(OpTypes, Operand)
-        if TypeDesc == "PTR" and existing and existing.endswith("_PTR"):
-            return
+    def _required_types_for_use(self, inst, use_index):
+        opcode = inst.opcodes[0]
+        ttab = self.instructionTypeTable.get(opcode, None)
+        if not ttab:
+            return TOP
+        uses = ttab[1]
+        req = TOP
+        if use_index < len(uses):
+            req = uses[use_index]
+        # Apply modifiers
+        mods = self.modifierOverrideTable.get(opcode, None)
+        if mods:
+            for mod, (def_over, use_over) in mods.items():
+                if mod in inst.opcodes[1:]:
+                    if use_index < len(use_over):
+                        req = use_over[use_index]
+        return req
 
-        if Operand.IsWritableReg:
-            OpTypes[Operand.Reg] = TypeDesc
-        else:
-            # Store operand itself as key for non-register values
-            # E.g. 0 in IADD vs 0 in FADD have different types
-            OpTypes[Operand] = TypeDesc
+    def _same_width_assumed(self, tsetA, tsetB):
+        # Under assumption: conflicts only among same width.
+        # We treat NUM32-family vs NUM32-family or NUM64 vs NUM64 as same width.
+        has32A = bool(tsetA & NUM32) or bool(tsetA & NUM1)
+        has64A = bool(tsetA & NUM64)
+        has32B = bool(tsetB & NUM32) or bool(tsetB & NUM1)
+        has64B = bool(tsetB & NUM64)
 
-    def GetOptype(self, OpTypes, Operand):
+        # If either is TOP, assume same width OK (we won't widen/narrow).
+        if tsetA == TOP or tsetB == TOP:
+            return True
+
+        if has32A and has64A:
+            # Ambiguous; assume OK per problem statement (we won't see such conflicts)
+            return True
+        if has32B and has64B:
+            return True
+
+        # Normal check
+        if has32A and has32B:
+            return True
+        if has64A and has64B:
+            return True
+        # Else, this would be a width conflict (not expected as per assumption)
+        return False
+
+    def reconcile_use_site_casts(self, function, OpTypes):
+        """
+        For each use, if producer's canonical type doesn't satisfy required type set,
+        insert a BITCAST at the use (or on the PHI edge).
+        Assumption: conflicts are same width (so BITCAST is sufficient).
+        """
+        changed = False
+
+        def name_new(reg, tag):
+            return f"{reg}_{tag}"
+
+        def insert_before(bb, inst, newinst):
+            idx = bb.instructions.index(inst)
+            bb.instructions.insert(idx, newinst)
+
+        def ensure_kind_at_use(bb, inst, use_operand, need_set):
+            # Producer canonical type
+            prod_reg = use_operand.Reg
+            have_set = self.CanonicalType.get(prod_reg, self.GetOptype(OpTypes, use_operand))
+            # If compatible, nothing to do
+            if have_set & need_set:
+                return False
+
+            # Sanity under assumption: same width only
+            if not self._same_width_assumed(have_set, need_set):
+                print(f"Warning: unexpected width mismatch between {have_set} and {need_set} at {inst}. Skipping cast.")
+                return False
+
+            # Insert BITCAST before 'inst'
+            new_reg = name_new(prod_reg, f"bitcast_{inst.id}")
+            dst_op = Operand.fromReg(new_reg, new_reg)
+            src_op = Operand.fromReg(prod_reg, prod_reg)
+            bc = Instruction(
+                id=f"{inst.id}_kindcast",
+                opcodes=["BITCAST"],
+                operands=[dst_op, src_op],
+                parentBB=bb
+            )
+            insert_before(bb, inst, bc)
+            # Patch the use to new reg
+            use_operand.SetReg(new_reg)
+            # Seed new type
+            OpTypes[new_reg] = need_set
+            # Canonicalize new reg to exactly the required type
+            self.CanonicalType[new_reg] = self.choose_canonical_type(need_set)
+            return True
+
+        def ensure_kind_on_phi_edge(phi_inst, use_index, use_operand, need_set):
+            prod_reg = use_operand.Reg
+            have_set = self.CanonicalType.get(prod_reg, self.GetOptype(OpTypes, use_operand))
+            if have_set & need_set:
+                return False
+            if not self._same_width_assumed(have_set, need_set):
+                print(f"Warning: unexpected width mismatch between {have_set} and {need_set} on PHI {phi_inst}. Skipping cast.")
+                return False
+
+            # Insert in predecessor (before terminator)
+            phi_bb = phi_inst.parentBB
+            pred_bb = phi_bb._preds[use_index]
+            term_idx = len(pred_bb.instructions) - 1
+            if term_idx < 0:
+                term_idx = 0
+            new_reg = name_new(prod_reg, f"edgebc_{phi_bb.id}_{phi_inst.id}")
+            dst_op = Operand.fromReg(new_reg, new_reg)
+            src_op = Operand.fromReg(prod_reg, prod_reg)
+            bc = Instruction(
+                id=f"{phi_inst.id}_edge_kindcast",
+                opcodes=["BITCAST"],
+                operands=[dst_op, src_op],
+                parentBB=pred_bb
+            )
+            pred_bb.instructions.insert(term_idx, bc)
+            # Patch PHI incoming
+            phi_inst.GetUses()[use_index].SetReg(new_reg)
+            # Seed new types
+            OpTypes[new_reg] = need_set
+            self.CanonicalType[new_reg] = self.choose_canonical_type(need_set)
+            return True
+
+        # Apply reconciliation
+        for bb in function.blocks:
+            # Copy because we may insert before 'inst'
+            for inst in list(bb.instructions):
+                uses = inst.GetUses()
+                for i, u in enumerate(uses):
+                    req = self._required_types_for_use(inst, i)
+                    # No requirement
+                    if req == TOP:
+                        continue
+
+                    # For predicates or PT, force BOOL
+                    if u.IsPredicateReg or u.IsPT:
+                        req = BOOL
+
+                    # If this is a PHI, handle on the edge
+                    if inst.opcodes[0] == "PHI":
+                        changed |= ensure_kind_on_phi_edge(inst, i, u, req)
+                    else:
+                        changed |= ensure_kind_at_use(bb, inst, u, req)
+
+        if changed:
+            # IR changed; rebuild def-use elsewhere
+            return True
+        return False
+
+    def GetTypeDesc(self, Operand, OpTypes):
+        # Prefer canonical type for registers
+        if Operand.Reg in self.CanonicalType:
+            # return a single type string
+            cset = self.CanonicalType[Operand.Reg]
+            if cset & INT32: return list(INT32)[0]
+            if cset & FLOAT32: return list(FLOAT32)[0]
+            if cset & INT64: return list(INT64)[0]
+            if cset & FLOAT64: return list(FLOAT64)[0]
+            if cset & BOOL: return list(BOOL)[0]
+            if cset & HALF2: return list(HALF2)[0]
+            # fallback
+            return list(cset)[0]
+
+        # Otherwise, derive from OpTypes
         if Operand in OpTypes:
-            return OpTypes[Operand]
+            types = OpTypes[Operand]
         elif Operand.Reg in OpTypes:
-            return OpTypes[Operand.Reg]
+            types = OpTypes[Operand.Reg]
         else:
-            return "NOTYPE"
-        
-    def TypeConflict(self, TypeA, TypeB):
-        if TypeA == TypeB:
-            return False
+            # Fallback: assume 32-bit int
+            return list(INT32)[0]
 
-        if TypeA == "NOTYPE" or TypeB == "NOTYPE":
-            return False
-
-        if TypeA == "ANY" or TypeB == "ANY":
-            return False
-
-        if TypeA == "NA" or TypeB == "NA":
-            return False
-
-        if TypeA.endswith("PTR") and TypeB.endswith("PTR"):
-            baseA = TypeA[:-3]
-            baseB = TypeB[:-3]
-            if baseA == baseB:
-                return False
-            if baseA == "" or baseB == "":
-                return False
-
-        return True
-
-    def ModifierOverride(self, Inst, idx, is_def):
-        op = Inst.opcodes[0]
-
-        if op not in self.modifierOverrideTable:
-            return None
-
-        modifierTable = self.modifierOverrideTable[op]
-
-        for mod in Inst.opcodes[1:]:
-            if mod in modifierTable:
-                def_override, use_override = modifierTable[mod]
-                if is_def:
-                    if idx < len(def_override):
-                        return def_override[idx]
-                else:
-                    if idx < len(use_override):
-                        return use_override[idx]
-
-        return None
-
-        
-    def ResolveType(self, Inst, operand, idx, defs_len, is_def):
-        op = Inst._opcodes[0]
-        def_types, use_types = self.instructionTypeTable[op]
-        type_list = def_types if is_def else use_types
-
-        typeDesc = "NA"
-        if idx < len(type_list):
-            typeDesc = type_list[idx]
-
-        # Modifier overrides
-        modRewrite = self.ModifierOverride(Inst, idx, is_def)
-        if modRewrite:
-            typeDesc = modRewrite
-
-        # Operand overrides
-        if operand.IsPredicateReg or operand.IsPT:
-            typeDesc = "Int1"
-            
-        if ".64" in Inst.opcodes:
-            if typeDesc == "Int32":
-                typeDesc = "Int64"
-            elif typeDesc == "Float32":
-                typeDesc = "Float64"
-
-        return typeDesc
-
-    def PropagateTypes(self, Inst, OpTypes):
-        # Get Inst opcode
-        op = Inst._opcodes[0]
-
-        if op not in self.instructionTypeTable:
-            print(f"Warning: Unhandled opcode {op} in {Inst}")
-            return
-
-        defs = Inst.GetDefs()
-        uses = Inst.GetUses()
-        defs_len = len(defs)
-
-        resolved_def_types = [
-            self.ResolveType(Inst, operand, idx, defs_len, True)
-            for idx, operand in enumerate(defs)
-        ]
-        resolved_use_types = [
-            self.ResolveType(Inst, operand, idx, defs_len, False)
-            for idx, operand in enumerate(uses)
-        ]
-
-        def_pairs = list(zip(defs, resolved_def_types))
-        use_pairs = list(zip(uses, resolved_use_types))
-
-        # Static resolve types
-        for operand, typeDesc in def_pairs + use_pairs:
-            if typeDesc != "NA" and "PROP" not in typeDesc and typeDesc != "ANY":
-                if not Inst.IsPhi(): # Propagate conflicts to somewhere else, not in PHI
-                    if operand.Reg in OpTypes and self.TypeConflict(OpTypes[operand.Reg], typeDesc):
-                        print(f"Warning: Type mismatch for {operand.Reg} in {Inst}: {OpTypes[operand.Reg]} vs {typeDesc}")
-                        self.Conflicts[Inst] = (operand, OpTypes[operand.Reg], typeDesc)
-                        return
-
-                self.SetOptype(OpTypes, operand, typeDesc)
-
-        # Find propagate type
-        propType = "NOTYPE"
-        for operand, typeDesc in def_pairs + use_pairs:
-            if typeDesc == "PROP":
-                existing = self.GetOptype(OpTypes, operand)
-                if existing != "NOTYPE":
-                    if not Inst.IsPhi(): # Propagate conflicts to somewhere else, not in PHI
-                        if propType != "NOTYPE" and self.TypeConflict(existing, propType):
-                            print(f"Warning: Propagation type mismatch for {operand} in {Inst}: {existing} vs {propType}")
-                            self.Conflicts[Inst] = (operand, existing, propType)
-                            return
-
-                    propType = existing
-
-        # Propagate types
-        for operand, typeDesc in def_pairs + use_pairs:
-            if typeDesc == "PROP" and propType != "NOTYPE":
-                self.SetOptype(OpTypes, operand, propType)
-            elif typeDesc == "PROP_PTR":
-                if propType in ["NOTYPE", "ANY"]:
-                    self.SetOptype(OpTypes, operand, "PTR")
-                else:
-                    self.SetOptype(OpTypes, operand, propType + "_PTR")
+        # Choose a stable representative
+        if types & INT32: return list(INT32)[0]
+        if types & FLOAT32: return list(FLOAT32)[0]
+        if types & INT64: return list(INT64)[0]
+        if types & FLOAT64: return list(FLOAT64)[0]
+        if types & BOOL: return list(BOOL)[0]
+        if types & HALF2: return list(HALF2)[0]
+        # fallback
+        return list(types)[0]

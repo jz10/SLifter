@@ -46,19 +46,19 @@ PatternTable = {
             "in": [
                 {
                     "opcodes": ["ISETP", "op1", "U32", "AND"],
-                    "def": ["pred2"],
-                    "use": ["PT", "reg3", "imm4", "PT"],
+                    "def": ["pred2", "PT"],
+                    "use": ["reg3", "imm4", "PT"],
                 },
                 {
                     "opcodes": ["ISETP", "op1", "U32", "AND", "EX"],
-                    "def": ["pred5"],
-                    "use": ["PT", "reg6", "imm7", "PT", "pred2"],
+                    "def": ["pred5", "PT"],
+                    "use": ["reg6", "imm7", "PT", "pred2"],
                 },
             ],
             "out": [
                 {
                     "opcodes": ["ISETP64", "op1", "AND"],
-                    "def": ["pred5"],
+                    "def": ["pred5", "PT"],
                     "use": ["reg6:reg3", "imm7:imm4", "PT"],
                 }
             ],
@@ -167,7 +167,6 @@ PatternTable = {
                     "use": ["reg3", "op4", "op5"],
                 }
             ],
-            "next": [("reg1", "reg2")],
         },
     ],
     ("MOV", "MOV"): [
@@ -248,22 +247,23 @@ PatternTable = {
                 },
             ],
         },
-        {
-            "in": [
-                {
-                    "opcodes": ["SHF", "R", "S32", "HI"],
-                    "def": ["reg1"],
-                    "use": ["RZ", "0x1f", "reg2"],
-                }
-            ],
-            "out": [
-                {
-                    "opcodes": ["CAST64"],
-                    "def": ["reg1:reg2"],
-                    "use": ["reg2"],
-                }
-            ],
-        }
+        # {
+        #     "in": [
+        #         {
+        #             "opcodes": ["SHF", "R", "S32", "HI"],
+        #             "def": ["reg1"],
+        #             "use": ["RZ", "0x1f", "reg2"],
+        #         }
+        #     ],
+        #     "defined": ["reg1:reg2"],
+        #     "out": [
+        #         {
+        #             "opcodes": ["CAST64"],
+        #             "def": ["reg1:reg2"],
+        #             "use": ["reg2"],
+        #         }
+        #     ],
+        # }
     ],
     ("IADD3", "IADD3"): [
         { # weird pattern observed from wyllie
@@ -403,6 +403,30 @@ PatternTable = {
                 }
             ],
             "next": [("reg2", "reg6")],
+        },
+    ],
+    ("SHF", "SHF"): [
+        {
+            "in": [
+                {
+                    "opcodes": ["SHF", "L", "U64", "HI"],
+                    "def": ["reg1"],
+                    "use": ["reg2", "imm3", "reg4"],
+                },
+                {
+                    "opcodes": ["SHF", "L", "U32"],
+                    "def": ["reg5"],
+                    "use": ["reg2", "imm3", "RZ"],
+                },
+            ],
+            "out": [
+                {
+                    "opcodes": ["SHL64"],
+                    "def": ["reg1:reg5"],
+                    "use": ["reg4:reg2", "imm3"],
+                }
+            ],
+            "next": [("reg2", "reg4")],
         },
     ],
 }

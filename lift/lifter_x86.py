@@ -1,4 +1,6 @@
 from llvmlite import ir, binding
+import re
+
 
 from transform.pack64 import Pack64
 from transform.sr_substitute import SR_TO_OFFSET, SRSubstitute
@@ -43,15 +45,17 @@ class X86Lifter(Lifter):
             RegRemap(),
             SetZero(),
             DefUseAnalysis(),
-            DCE(),
-            DefUseAnalysis(),
             MovEliminate(),
+            DefUseAnalysis(),
+            DCE(),
             DefUseAnalysis(),
             OperAggregate(),
             RegRemap(),
             DefUseAnalysis(),
             DCE(),
+            DefUseAnalysis(),
             TypeAnalysis(),
+            DefUseAnalysis(),
             RegRemap(),
         ]
 
@@ -100,7 +104,7 @@ class X86Lifter(Lifter):
         BankTy =  self.ir.ArrayType(self.ir.IntType(8), 4096)
         ConstArrayTy =  self.ir.ArrayType(BankTy, 5)
         self.ConstMem = self.ir.GlobalVariable(llvm_module, ConstArrayTy, "const_mem")
-        SharedArrayTy =  self.ir.ArrayType(self.ir.IntType(32), 49152)
+        SharedArrayTy =  self.ir.ArrayType(self.ir.IntType(8), 32768)
         self.SharedMem = self.ir.GlobalVariable(llvm_module, SharedArrayTy, "shared_mem")
         LocalArrayTy =  self.ir.ArrayType(self.ir.IntType(8), 32768)
         self.LocalMem = self.ir.GlobalVariable(llvm_module, LocalArrayTy, "local_mem")
@@ -287,10 +291,10 @@ class X86Lifter(Lifter):
                     val = self.ir.Constant(op.GetIRType(self), 1)
                 else:
                     ir_name = op.GetIRName(self)
-                    if ir_name not in ir_regs:
-                        val = rough_search(op)
-                    else:
-                        val = ir_regs[ir_name]
+                    # if ir_name not in ir_regs:
+                    #     val = rough_search(op)
+                    # else:
+                    val = ir_regs[ir_name]
                 ir_inst.add_incoming(val, block_map[pred_bb])
 
 
@@ -314,13 +318,10 @@ class X86Lifter(Lifter):
             if op.IsRZ:
                 return self.ir.Constant(op.GetIRType(self), 0)
             if op.IsPT:
-                return self.ir.Constant(op.GetIRType(self), 1)
+                return self.ir.Constant(op.GetIRType(self), not op.IsNotReg)
             if op.IsReg:
                 irName = op.GetIRName(self)
-                if irName not in IRRegs:
-                    val = roughSearch(op)
-                else:
-                    val = IRRegs[irName]
+                val = IRRegs[irName]
                     
                 if op.IsNegativeReg:
                     if op.GetTypeDesc().startswith('F'):
@@ -421,6 +422,65 @@ class X86Lifter(Lifter):
             tmp = IRBuilder.fmul(v1, v2, "ffma_tmp")
             tmp = IRBuilder.fadd(tmp, v3, "ffma")
             IRRegs[dest.GetIRName(self)] = tmp
+            
+        elif opcode == "FMUL":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "fmul_lhs")
+            v2 = _get_val(uses[1], "fmul_rhs")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.fmul(v1, v2, "fmul")
+            
+        elif opcode == "FMNMX":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "fmnmx_lhs")
+            v2 = _get_val(uses[1], "fmnmx_rhs")
+            pred = Inst.GetUses()[2]
+            if pred.IsPT:
+                r = IRBuilder.fcmp_ordered(">", v1, v2, "fmnmx")
+                IRRegs[dest.GetIRName(self)] = IRBuilder.select(r, v1, v2, "fmnmx_select")
+            else:
+                r = IRBuilder.fcmp_ordered("<", v1, v2, "fmnmx")
+                IRRegs[dest.GetIRName(self)] = IRBuilder.select(r, v1, v2, "fmnmx_select")
+            
+        elif opcode == "FCHK":
+            # Checks for various special values, nan, inf, etc
+            # Create a device function for it
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "fchk_val")
+            chk_type = uses[1]
+            
+            func_name = "fchk"
+            if func_name not in self.DeviceFuncs:
+                func_ty = ir.FunctionType(ir.IntType(1), [ir.FloatType(), ir.IntType(32)], False)
+                self.DeviceFuncs[func_name] = ir.Function(IRBuilder.module, func_ty, func_name)
+                
+            IRRegs[dest.GetIRName(self)] = IRBuilder.call(self.DeviceFuncs[func_name], [v1, _get_val(chk_type, "fchk_type")], "fchk_call")
+            
+        elif opcode == "DADD":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "dadd_lhs")
+            v2 = _get_val(uses[1], "dadd_rhs")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.fadd(v1, v2, "dadd")
+            
+        elif opcode == "DFMA":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "dfma_lhs")
+            v2 = _get_val(uses[1], "dfma_rhs")
+            v3 = _get_val(uses[2], "dfma_addend")
+            tmp = IRBuilder.fmul(v1, v2, "dfma_tmp")
+            tmp = IRBuilder.fadd(tmp, v3, "dfma")
+            IRRegs[dest.GetIRName(self)] = tmp
+            
+        elif opcode == "DMUL":
+            dest = Inst.GetDefs()[0]
+            uses = Inst.GetUses()
+            v1 = _get_val(uses[0], "dmul_lhs")
+            v2 = _get_val(uses[1], "dmul_rhs")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.fmul(v1, v2, "dmul")
 
         elif opcode == "ISCADD":
             dest = Inst.GetDefs()[0]
@@ -469,9 +529,36 @@ class X86Lifter(Lifter):
         elif opcode == "SHF" or opcode == "USHF":
             dest = Inst.GetDefs()[0]
             uses = Inst.GetUses()
-            v1 = _get_val(uses[0], "shf_lhs")
-            v2 = _get_val(uses[1], "shf_rhs")
-            IRRegs[dest.GetIRName(self)] = IRBuilder.shl(v1, v2, "shf")
+            v1 = _get_val(uses[0], "shf_lo")
+            v2 = _get_val(uses[1], "shf_shift")
+            v3 = _get_val(uses[2], "shf_hi")
+            
+            # concatentate lo and hi
+            lo64 = IRBuilder.zext(v1, self.ir.IntType(64))
+            hi64 = IRBuilder.zext(v3, self.ir.IntType(64))
+            v = IRBuilder.or_(
+                lo64,
+                IRBuilder.shl(hi64, self.ir.Constant(self.ir.IntType(64), 32)),
+                "shf_concat"
+            )
+            
+            v2 = IRBuilder.zext(v2, self.ir.IntType(64), "shf_shift_64")
+
+            
+            right = Inst.opcodes[1] == "R"
+            signed = "S" in Inst.opcodes[2]
+            high = "HI" in Inst.opcodes
+            if right:
+                if signed:
+                    r = IRBuilder.ashr(v, v2)
+                else:
+                    r = IRBuilder.lshr(v, v2)
+            else:
+                r = IRBuilder.shl(v, v2)
+            
+            if high:
+                r = IRBuilder.lshr(r, self.ir.Constant(self.ir.IntType(64), 32), "shf_hi")
+            IRRegs[dest.GetIRName(self)] = IRBuilder.trunc(r, dest.GetIRType(self), "shf_result")
                 
         elif opcode == "IADD":
             dest = Inst.GetDefs()[0]
@@ -565,6 +652,12 @@ class X86Lifter(Lifter):
             ptr = Inst.GetUses()[0]
             addr = _get_val(ptr, "lds_addr")
             addr = IRBuilder.gep(self.SharedMem, [self.ir.Constant(self.ir.IntType(32), 0), addr], "lds_shared_addr")
+            if addr.type.pointee != dest.GetIRType(self):
+                addr = IRBuilder.bitcast(
+                    addr,
+                    self.ir.PointerType(dest.GetIRType(self)),
+                    "lds_shared_addr_cast",
+                )
             val = IRBuilder.load(addr, "lds", typ=dest.GetIRType(self))
             IRRegs[dest.GetIRName(self)] = val
 
@@ -574,7 +667,11 @@ class X86Lifter(Lifter):
             addr = _get_val(ptr, "sts_addr")
             addr = IRBuilder.gep(self.SharedMem, [self.ir.Constant(self.ir.IntType(32), 0), addr], "sts_shared_addr")
             if addr.type.pointee != val.GetIRType(self):
-                addr = IRBuilder.bitcast(addr, self.ir.PointerType(val.GetIRType(self)), "sts_shared_addr_cast")
+                addr = IRBuilder.bitcast(
+                    addr,
+                    self.ir.PointerType(val.GetIRType(self)),
+                    "sts_shared_addr_cast",
+                )
             v = _get_val(val, "sts_val")
             IRBuilder.store(v, addr)
             
@@ -592,7 +689,11 @@ class X86Lifter(Lifter):
             addr = _get_val(ptr, "stl_addr")
             addr = IRBuilder.gep(self.LocalMem, [self.ir.Constant(self.ir.IntType(32), 0), addr], "stl_local_addr")
             if addr.type.pointee != val.GetIRType(self):
-                addr = IRBuilder.bitcast(addr, self.ir.PointerType(val.GetIRType(self)), "stl_local_addr_cast")
+                addr = IRBuilder.bitcast(
+                    addr,
+                    self.ir.PointerType(val.GetIRType(self)),
+                    "stl_local_addr_cast",
+                )
             v = _get_val(val, "stl_val")
             IRBuilder.store(v, addr)
 
@@ -759,87 +860,59 @@ class X86Lifter(Lifter):
 
                     
         elif opcode == "LOP3" or opcode == "ULOP3" or opcode == "PLOP3" or opcode == "UPLOP3":
-            # Lower LOP3.LUT for both register and predicate destinations.
-            dest = Inst.GetDefs()[0]
+            
+            if Inst.opcodes[1] != "LUT":
+                raise UnsupportedInstructionException
+            
+            
+            destPred = Inst.GetDefs()[0] if len(Inst.GetDefs()) > 1 else None
+            destReg = Inst.GetDefs()[-1]
             src1, src2, src3 = Inst.GetUses()[0], Inst.GetUses()[1], Inst.GetUses()[2]
-            func = Inst._opcodes[1] if len(Inst._opcodes) > 1 else None
-
-            if func != "LUT":
-                raise UnsupportedInstructionException
-
-            # Find the LUT immediate among uses (last immediate before any PT operand)
-            imm8 = None
-            for op in reversed(Inst.GetUses()):
-                if op.IsImmediate:
-                    imm8 = op.ImmediateValue & 0xFF
-                    break
-            if imm8 is None:
-                raise UnsupportedInstructionException
+            
+            lut = Inst.GetUses()[3]
+            src4 = Inst.GetUses()[4]
 
             a = _get_val(src1, "lop3_a")
             b = _get_val(src2, "lop3_b")
             c = _get_val(src3, "lop3_c")
+            q = _get_val(src4, "lop3_q")
 
-            # Sum-of-products bitwise construction for 32-bit result
-            zero = self.ir.Constant(b.type, 0)
-            # Fast-path a-agnostic mask used frequently: imm8 == 0xC0 -> b & c
-            if imm8 == 0xC0:
-                res32 = IRBuilder.and_(b, c, "lop3_bc")
-            else:
-                nota = IRBuilder.not_(a, "lop3_nota")
-                notb = IRBuilder.not_(b, "lop3_notb")
-                notc = IRBuilder.not_(c, "lop3_notc")
-                res32 = zero
-                for idx in range(8):
-                    if ((imm8 >> idx) & 1) == 0:
-                        continue
-                    xa = a if (idx & 1) else nota
-                    xb = b if (idx & 2) else notb
-                    xc = c if (idx & 4) else notc
-                    tmp = IRBuilder.and_(xa, xb, f"lop3_and_ab_{idx}")
-                    tmp = IRBuilder.and_(tmp, xc, f"lop3_and_abc_{idx}")
-                    res32 = IRBuilder.or_(res32, tmp, f"lop3_or_{idx}")
+            lut_val = lut.ImmediateValue
+            
+            na = IRBuilder.xor(a, self.ir.Constant(a.type, -1))
+            nb = IRBuilder.xor(b, self.ir.Constant(b.type, -1))
+            nc = IRBuilder.xor(c, self.ir.Constant(c.type, -1))
+            
+            zero = self.ir.Constant(destReg.GetIRType(self), 0)
+            r = zero
+            
+            for idx in range(8):
+                if (lut_val >> idx) & 1 == 0:
+                    continue 
 
-            if dest.IsPredicateReg:
-                # For P-dest, prefer a safe minimal lowering:
-                #  - Recognize imm8==0xC0 -> (B & C) != 0 (matches loop3).
-                #  - Otherwise, approximate with 1-bit LUT lookup of (LSB(A),LSB(B),LSB(C)).
-                uses = Inst.GetUses()
-                c_is_imm = len(uses) >= 3 and uses[2].IsImmediate
-                if imm8 == 0xC0 and c_is_imm:
-                    mask = IRBuilder.and_(b, c, "lop3_bc_mask")
-                    pred = IRBuilder.icmp_unsigned("!=", mask, zero, "lop3_pred")
-                    IRRegs[dest.GetIRName(self)] = pred
+                # idx = (a_bit << 2) | (b_bit << 1) | c_bit
+                a_bit = (idx >> 2) & 1
+                b_bit = (idx >> 1) & 1
+                c_bit = idx        & 1
+
+                va = a  if a_bit else na
+                vb = b  if b_bit else nb
+                vc = c  if c_bit else nc
+
+                t_ab   = IRBuilder.and_(va, vb)
+                t_term = IRBuilder.and_(t_ab, vc)
+
+                if r is zero:
+                    r = t_term
                 else:
-                    one_i32 = self.ir.Constant(a.type, 1)
-                    a_lsb_i32 = IRBuilder.and_(a, one_i32, "lop3_a_lsb")
-                    b_lsb_i32 = IRBuilder.and_(b, one_i32, "lop3_b_lsb")
-                    c_lsb_i32 = IRBuilder.and_((c if c.type == a.type else IRBuilder.zext(c, a.type, "lop3_c_zext")), one_i32, "lop3_c_lsb")
-                    a0 = IRBuilder.icmp_unsigned("!=", a_lsb_i32, self.ir.Constant(a.type, 0), "lop3_a0")
-                    b0 = IRBuilder.icmp_unsigned("!=", b_lsb_i32, self.ir.Constant(b.type, 0), "lop3_b0")
-                    c0 = IRBuilder.icmp_unsigned("!=", c_lsb_i32, self.ir.Constant(a.type, 0), "lop3_c0")
-                    a0_i32 = IRBuilder.sext(a0, a.type)
-                    b0_i32 = IRBuilder.sext(b0, b.type)
-                    c0_i32 = IRBuilder.sext(c0, a.type)
-                    idx = IRBuilder.or_(
-                        a0_i32,
-                        IRBuilder.or_(
-                            IRBuilder.shl(b0_i32, self.ir.Constant(b.type, 1)),
-                            IRBuilder.shl(c0_i32, self.ir.Constant(a.type, 2))
-                        ),
-                        "lop3_idx"
-                    )
-                    imm_i32 = self.ir.Constant(a.type, imm8 & 0xFF)
-                    bit_i32 = IRBuilder.and_(
-                        IRBuilder.lshr(imm_i32, idx, "lop3_lut_shift"),
-                        self.ir.Constant(a.type, 1),
-                        "lop3_lut_bit"
-                    )
-                    pred = IRBuilder.icmp_unsigned("!=", bit_i32, self.ir.Constant(a.type, 0), "lop3_pred")
-                    IRRegs[dest.GetIRName(self)] = pred
-            else:
-                IRRegs[dest.GetIRName(self)] = res32
+                    r = IRBuilder.or_(r, t_term)
 
+            if destReg.IsWritableReg:
+                IRRegs[destReg.GetIRName(self)] = r
+                
+            if destPred and destPred.IsWritableReg:
+                tmp = IRBuilder.icmp_signed('!=', r, zero, "lop3_pred_cmp")
+                IRRegs[destPred.GetIRName(self)] = IRBuilder.or_(tmp, q, "lop3_p")
 
         elif opcode == "MOVM":
             # TODO: dummy implementation
@@ -882,8 +955,7 @@ class X86Lifter(Lifter):
         elif opcode == "ULDC" or opcode == "ULDC64" or opcode == "LDC":
             dest = Inst.GetDefs()[0]
             src = Inst.GetUses()[0]
-            val = _get_val(src, "ldc")
-            IRRegs[dest.GetIRName(self)] = val
+            IRRegs[dest.GetIRName(self)] = _get_val(src, "ldc_const")
         
         elif opcode == "CS2R":
             # CS2R (Convert Special Register to Register)
@@ -919,36 +991,110 @@ class X86Lifter(Lifter):
                     IRBuilder.store(IRVal, IRRegs[dest_name])
                 else:
                     IRRegs[dest_name] = IRVal
+                    
+        elif opcode == "FSETP" or opcode == "DSETP":
+            dest1 = Inst.GetDefs()[0]
+            dest2 = Inst.GetDefs()[1]
+            a, b = Inst.GetUses()[0], Inst.GetUses()[1]
+            src = Inst.GetUses()[2]
+            
+            val1 = _get_val(a, "fsetrp_lhs")
+            val2 = _get_val(b, "fsetrp_rhs")
+            val3 = _get_val(src, "fsetrp_src")
+            
+            cmp1 = Inst.opcodes[1]
+            cmp2 = Inst.opcodes[2]
+            
+            isUnordered = "U" in cmp1
+            
+            funcs_map = {
+                "EQ": "==",
+                "NE": "!=",
+                "LT": "<",
+                "LE": "<=",
+                "GT": ">",
+                "GE": ">=",
+                "NEU": "!=",
+                "LTU": "<",
+                "LEU": "<=",
+                "GTU": ">",
+                "GEU": ">=",
+            }
+            
+            cmp2_map = {
+                "AND": IRBuilder.and_,
+                "OR": IRBuilder.or_,
+                "XOR": IRBuilder.xor
+            }
+            
+            if isUnordered:
+                r = IRBuilder.fcmp_unordered(funcs_map[cmp1], val1, val2, "fsetrp_cmp1")
+            else:
+                r = IRBuilder.fcmp_ordered(funcs_map[cmp1], val1, val2, "fsetrp_cmp1")
+                
+            cmp2_func = cmp2_map.get(cmp2)
+            if not cmp2_func:
+                raise UnsupportedInstructionException
+            
+            r1 = cmp2_func(r, val3, "fsetrp_cmp2")
+            
+            if not dest1.IsPT:
+                IRRegs[dest1.GetIRName(self)] = r1
+                
+            if not dest2.IsPT:
+                r2 = IRBuilder.not_(r1, "fsetrp_not")
+                IRRegs[dest2.GetIRName(self)] = r2
 
-        elif opcode == "ISETP" or opcode == "ISETP64" or opcode == "FSETP" or opcode == "UISETP":
-            uses = Inst.GetUses()
-            # Some encodings include a leading PT predicate use; skip it
-            start_idx = 1 if len(uses) > 0 and getattr(uses[0], 'IsPT', False) else 0
-            r = _get_val(uses[start_idx], "branch_operand_0")
-
-            # Remove U32 from opcodes
-            # Currently just assuming every int are signed. May be dangerous?  
-            opcodes = [opcode for opcode in Inst._opcodes if opcode != "U32"]
-            isUnsigned = "U32" in Inst._opcodes
-
-            for i in range(1, len(opcodes)):
-                temp = _get_val(uses[start_idx + i], f"branch_operand_{i}")
-                if opcodes[i] == "AND":
-                    r = IRBuilder.and_(r, temp, f"branch_and_{i}")
-                elif opcodes[i] == "OR":
-                    r = IRBuilder.or_(r, temp, f"branch_or_{i}")
-                elif opcodes[i] == "XOR":
-                    r = IRBuilder.xor(r, temp, f"branch_xor_{i}")
-                elif opcodes[i] == "EX":
-                    pass #TODO:?
-                else:
-                    if isUnsigned:
-                        r = IRBuilder.icmp_unsigned(self.GetCmpOp(opcodes[i]), r, temp, f"branch_cmp_{i}")
-                    else:
-                        r = IRBuilder.icmp_signed(self.GetCmpOp(opcodes[i]), r, temp, f"branch_cmp_{i}")
-
-            pred = Inst.GetDefs()[0]
-            IRRegs[pred.GetIRName(self)] = r
+        elif opcode == "ISETP" or opcode == "ISETP64" or opcode == "UISETP":
+            dest1 = Inst.GetDefs()[0]
+            dest2 = Inst.GetDefs()[1]
+            a, b = Inst.GetUses()[0], Inst.GetUses()[1]
+            src = Inst.GetUses()[2]
+            
+            val1 = _get_val(a, "isetrp_lhs")
+            val2 = _get_val(b, "isetrp_rhs")
+            val3 = _get_val(src, "isetrp_src")
+            
+            cmp1 = Inst.opcodes[1]
+            if "U" in Inst.opcodes[2]:
+                isUnsigned = True
+                cmp2 = Inst.opcodes[3]
+            else:
+                isUnsigned = False
+                cmp2 = Inst.opcodes[2]
+            
+            funcs_map = {
+                "EQ": "==",
+                "NE": "!=",
+                "LT": "<",
+                "LE": "<=",
+                "GT": ">",
+                "GE": ">=",
+            }
+            
+            cmp2_map = {
+                "AND": IRBuilder.and_,
+                "OR": IRBuilder.or_,
+                "XOR": IRBuilder.xor
+            }
+            
+            if isUnsigned:
+                r = IRBuilder.icmp_unsigned(funcs_map[cmp1], val1, val2, "isetrp_cmp1")
+            else:
+                r = IRBuilder.icmp_signed(funcs_map[cmp1], val1, val2, "isetrp_cmp1")
+                
+            cmp2_func = cmp2_map.get(cmp2)
+            if not cmp2_func:
+                raise UnsupportedInstructionException
+            
+            r1 = cmp2_func(r, val3, "isetrp_cmp2")
+            
+            if not dest1.IsPT:
+                IRRegs[dest1.GetIRName(self)] = r1
+                
+            if not dest2.IsPT:
+                r2 = IRBuilder.not_(r1, "isetrp_not")
+                IRRegs[dest2.GetIRName(self)] = r2
 
         elif opcode == "PBRA":
             pred = Inst.GetUses()[0]
@@ -1063,49 +1209,28 @@ class X86Lifter(Lifter):
             wid = _get_val(width, "shfl_width")
             
             mode = Inst.opcodes[1].upper()
-            mode_to_name = {
-                "DOWN": "shfl_down",
-                "UP": "shfl_up",
-                "IDX": "shfl_idx",
-                "BFLY": "shfl_bfly",
-            }
-            if mode not in mode_to_name:
-                raise UnsupportedInstructionException
+            
+            dtype = destReg.GetIRType(self)
+            i32 = self.ir.IntType(32)
+            mask_const = self.ir.Constant(i32, 0xFFFFFFFF)
+            
+            func_name = "warp_shfl_" + mode.lower() + "_" + dtype.intrinsic_name
+            func_ty = ir.FunctionType(dtype, [i32, dtype, i32, i32], False)
 
-            funcName = mode_to_name[mode]
-            if funcName not in self.DeviceFuncs:
-                FuncTy = ir.FunctionType(ir.IntType(32), [ir.IntType(32), ir.IntType(32), ir.IntType(32)], False)
-                self.DeviceFuncs[funcName] = ir.Function(IRBuilder.module, FuncTy, funcName)
+            if func_name not in self.DeviceFuncs:
+                self.DeviceFuncs[func_name] = ir.Function(IRBuilder.module, func_ty, func_name)
 
-            i32 = ir.IntType(32)
-            if val.type != i32:
-                if hasattr(val.type, "width") and val.type.width == 32:
-                    val_i32 = IRBuilder.bitcast(val, i32, "shfl_val_i32")
-                elif hasattr(val.type, "width") and val.type.width > 32:
-                    val_i32 = IRBuilder.trunc(val, i32, "shfl_val_i32")
-                else:
-                    val_i32 = IRBuilder.zext(val, i32, "shfl_val_i32")
-            else:
-                val_i32 = val
-
-            def _int_to_i32(v, tag):
-                if v.type == i32:
-                    return v
-                if hasattr(v.type, "width") and v.type.width > 32:
-                    return IRBuilder.trunc(v, i32, tag)
-                return IRBuilder.zext(v, i32, tag)
-
-            off_i32 = _int_to_i32(off, "shfl_off_i32")
-            wid_i32 = _int_to_i32(wid, "shfl_width_i32")
-
-            shflVal = IRBuilder.call(self.DeviceFuncs[funcName], [val_i32, off_i32, wid_i32], funcName)
+            shflVal = IRBuilder.call(
+                self.DeviceFuncs[func_name],
+                [mask_const, val, off, wid],
+                func_name,
+            )
 
             dest_type = destReg.GetIRType(self)
-            if dest_type != i32:
-                shflVal = IRBuilder.bitcast(shflVal, dest_type, f"{funcName}_cast")
-            
+
             IRRegs[destReg.GetIRName(self)] = shflVal
-            IRRegs[destPred.GetIRName(self)] = ir.Constant(ir.IntType(1), 1)
+            if not destPred.IsPT:
+                IRRegs[destPred.GetIRName(self)] = self.ir.Constant(self.ir.IntType(1), 1)
 
         elif opcode == "MATCH":
             dest = Inst.GetDefs()[0]
@@ -1494,17 +1619,21 @@ class X86Lifter(Lifter):
         elif TypeDesc == "Float32":
             return self.ir.FloatType()
         elif TypeDesc == "Int32_PTR":
-            return self.ir.PointerType(self.ir.IntType(32))
+            return self.ir.PointerType(self.ir.IntType(32), 1)
         elif TypeDesc == "Float32_PTR":
-            return self.ir.PointerType(self.ir.FloatType())
+            return self.ir.PointerType(self.ir.FloatType(), 1)
         elif TypeDesc == "Int64":
             return self.ir.IntType(64)
         elif TypeDesc == "Int64_PTR":
-            return self.ir.PointerType(self.ir.IntType(64))
-        elif TypeDesc == "Int1":
+            return self.ir.PointerType(self.ir.IntType(64), 1)
+        elif TypeDesc == "Float64":
+            return self.ir.DoubleType()
+        elif TypeDesc == "Float64_PTR":
+            return self.ir.PointerType(self.ir.DoubleType(), 1)
+        elif TypeDesc == "Bool":
             return self.ir.IntType(1)
         elif TypeDesc == "PTR":
-            return self.ir.PointerType(self.ir.IntType(32))
+            return self.ir.PointerType(self.ir.IntType(8), 1)
         elif TypeDesc == "NOTYPE":
             return self.ir.IntType(32) # Fallback to Int32
 
@@ -1513,6 +1642,15 @@ class X86Lifter(Lifter):
     def Shutdown(self):
         # Cleanup LLVM environment
         binding.shutdown()
+        
+    def postprocess_ir(self, ir_code):
+        return re.sub(
+            r'(@"(?:const_mem|local_mem)"\s*=\s*external)\s+global\b',
+            r'\1 thread_local global',
+            ir_code
+        )
+
+        
 
 
 Lifter = X86Lifter

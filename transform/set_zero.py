@@ -21,7 +21,7 @@ class SetZero(SaSSTransform):
         if (inst.opcodes[0] == "MOV" and 
             len(inst.operands) >= 2 and 
             inst.operands[1].IsRZ):
-            dest_reg = inst.GetDef()
+            dest_reg = inst.GetDefs()[0]
             setzero_inst = self.create_setzero_instruction(inst, dest_reg)
             replaceInsts[inst] = setzero_inst
             return 1
@@ -33,7 +33,7 @@ class SetZero(SaSSTransform):
             inst.operands[1].IsRZ and 
             inst.operands[2].IsRZ and
             inst.operands[3].IsRZ):
-            dest_reg = inst.GetDef()
+            dest_reg = inst.GetDefs()[0]
             setzero_inst = self.create_setzero_instruction(inst, dest_reg)
             replaceInsts[inst] = setzero_inst
             return 1
@@ -42,7 +42,7 @@ class SetZero(SaSSTransform):
         if (inst.opcodes[0] == "XOR" and 
             len(inst.operands) >= 3 and
             inst.operands[1].Name == inst.operands[2].Name):
-            dest_reg = inst.GetDef()
+            dest_reg = inst.GetDefs()[0]
             setzero_inst = self.create_setzero_instruction(inst, dest_reg)
             replaceInsts[inst] = setzero_inst
             return 1
@@ -53,7 +53,7 @@ class SetZero(SaSSTransform):
             inst.operands[1].IsRZ and 
             inst.operands[2].IsRZ and
             inst.operands[3].IsRZ):
-            dest_reg = inst.GetDef()
+            dest_reg = inst.GetDefs()[0]
             setzero_inst = self.create_setzero_instruction(inst, dest_reg)
             replaceInsts[inst] = setzero_inst
             return 1
@@ -62,7 +62,7 @@ class SetZero(SaSSTransform):
         if (inst.opcodes[0] == "CS2R" and 
             len(inst.operands) >= 2 and
             inst.operands[1].IsRZ):
-            dest_reg = inst.GetDef()
+            dest_reg = inst.GetDefs()[0]
             setzero_inst = self.create_setzero_instruction(inst, dest_reg)
             replaceInsts[inst] = setzero_inst
             return 1
