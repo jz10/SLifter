@@ -1,5 +1,6 @@
 from llvmlite import ir, binding
 
+from transform.cg_patterns import CGPatterns
 from transform.pack64 import Pack64
 from transform.sr_substitute_reverse import SRSubstituteReverse
 from transform.opmod_transform import OpModTransform
@@ -31,6 +32,7 @@ class InvalidTypeException(Exception):
 class NVVMLifter(Lifter):
     def get_transform_passes(self):
         return [
+            CGPatterns(),
             Pack64(),
             SRSubstituteReverse(),
             OpModTransform(),
@@ -56,7 +58,7 @@ class NVVMLifter(Lifter):
             DefUseAnalysis(),
             RegRemap(),
         ]
-        
+
     def GetCmpOp(self, Opcode):
         if Opcode == "GE" or Opcode == "GEU":
             return ">="
@@ -189,9 +191,9 @@ class NVVMLifter(Lifter):
             builder = self.ir.IRBuilder(func.BlockMap[bb])
             self._populate_phi_nodes(bb, builder, ir_regs, func.BlockMap)
 
-    def _lift_basic_block(self, bb, builder, ir_regs, block_map, ArgsMap):
+    def _lift_basic_block(self, bb, builder, ir_regs, block_map, const_mem):
         for inst in bb.instructions:
-            self.lift_instruction(inst, builder, ir_regs, ArgsMap, block_map)
+            self.lift_instruction(inst, builder, ir_regs, const_mem, block_map)
 
     def _populate_phi_nodes(self, bb, builder, ir_regs, block_map):
         ir_block = block_map[bb]
@@ -275,7 +277,7 @@ class NVVMLifter(Lifter):
             print("Warning: failed to add nvvm.annotations metadata:", e)
 
 
-    def lift_instruction(self, Inst, IRBuilder: ir.IRBuilder, IRRegs, ArgsMap, BlockMap):
+    def lift_instruction(self, Inst, IRBuilder: ir.IRBuilder, IRRegs, ConstMem, BlockMap):
         if len(Inst._opcodes) == 0:
             raise UnsupportedInstructionException("Empty opcode list")
         opcode = Inst._opcodes[0]
@@ -314,7 +316,7 @@ class NVVMLifter(Lifter):
                         val = IRBuilder.call(self.DeviceFuncs["abs"], [val], f"{name}_abs")
                 return val
             if op.IsArg:
-                return ArgsMap[op.GetIRName(self)]
+                return ConstMem[op.GetIRName(self)]
             if op.IsImmediate:
                 return self.ir.Constant(op.GetIRType(self), op.ImmediateValue)
             if op.IsConstMem and not op.IsArg:
@@ -792,6 +794,10 @@ class NVVMLifter(Lifter):
             pass
 
         elif opcode == "SYNC":
+            pass
+        
+        
+        elif opcode == "WARPSYNC":
             pass
         
         elif opcode == "BRA":

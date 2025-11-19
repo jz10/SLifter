@@ -13,6 +13,7 @@ class SetZero(SaSSTransform):
         for func in module.functions:
             count += self.process(func)
 
+        self.total_setzero = count
         print(f"SetZero: replaced {count} zero-setting instructions with SETZERO")
         print("=== End of SetZero ===")
 

@@ -55,5 +55,6 @@ class OpModTransform(SaSSTransform):
 
                 block.instructions = new_insts
 
+        self.total_x4_expansions = total_inserted
         print(f"Total .X4 expansions inserted: {total_inserted}")
         print("=== End of OpModeTransform ===")

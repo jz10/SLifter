@@ -16,6 +16,7 @@ class SRSubstituteReverse(SaSSTransform):
             for block in func.blocks:
                 count += process(block.instructions, offset_to_sr)
 
+        self.total_sr_reverse = count
         print(f"SRSubstituteReverse: processed {count} operands")
         print("=== End of SRSubstituteReverse ===")
 

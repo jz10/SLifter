@@ -24,19 +24,19 @@ PatternTable = {
             "in": [
                 {
                     "opcodes": ["ISETP", "op1", "U32", "AND"],
-                    "def": ["pred2"],
-                    "use": ["PT", "reg3", "imm4", "PT"],
+                    "def": ["pred2", "PT"],
+                    "use": ["reg3", "imm4", "PT"],
                 },
                 {
                     "opcodes": ["ISETP", "op1", "AND", "EX"],
-                    "def": ["pred5"],
-                    "use": ["PT", "reg6", "imm7", "PT", "pred2"],
+                    "def": ["pred5", "PT"],
+                    "use": ["reg6", "imm7", "PT", "pred2"],
                 },
             ],
             "out": [
                 {
                     "opcodes": ["ISETP64", "op1", "AND"],
-                    "def": ["pred5"],
+                    "def": ["pred5", "PT"],
                     "use": ["reg6:reg3", "imm7:imm4", "PT"],
                 }
             ],

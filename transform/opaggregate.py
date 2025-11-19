@@ -12,6 +12,7 @@ class OperAggregate(SaSSTransform):
 
         totalInsert = 0
         totalRemove = 0
+        totalPatterns = 0
 
         for func in module.functions:
 
@@ -25,20 +26,26 @@ class OperAggregate(SaSSTransform):
 
             self.TrackPatterns(SeedPatterns)
             
+            patterns = len(self.ProcessedPatterns)
+            totalPatterns += patterns
+            
             self.FixRegisterDependencies()
 
             self.ApplyChanges(func)
 
             print(f"Function {func.name}:")
-            print(f"OperAggregate Insert Instructions: {len(self.InsertInsts)}")
-            print(f"OperAggregate Remove Instructions: {len(self.RemoveInsts)}")
+            print(f"\tOperAggregate Patterns Found: {patterns}")
+            print(f"\tOperAggregate Insert Instructions: {len(self.InsertInsts)}")
+            print(f"\tOperAggregate Remove Instructions: {len(self.RemoveInsts)}")
 
             totalInsert += len(self.InsertInsts)
             totalRemove += len(self.RemoveInsts)
 
+        print(f"Total OperAggregate Patterns Found: {totalPatterns}")
         print(f"Total OperAggregate Insert Instructions: {totalInsert}")
         print(f"Total OperAggregate Remove Instructions: {totalRemove}")
-        
+        self.total_patterns = totalPatterns
+
         print("=== End of Operator Aggregation Transformation ===")
         
     # def GetLDG64Instructions(self, func):
@@ -622,6 +629,7 @@ class OperAggregate(SaSSTransform):
                 print(f"\tUnpack64 inserted for operand ({operands[0].Name}, {operands[1].Name}) from {DefOp.Name}")
 
         return Unpack64Insts
+
             
 
     def ApplyChanges(self, func):

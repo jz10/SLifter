@@ -38,18 +38,18 @@ $L__BB0_2:                              // %BB_0060
 	ld.param.u64 	%rd11, [_Z5loop4PKfS0_Pfi_param_1];
 	ld.param.u64 	%rd10, [_Z5loop4PKfS0_Pfi_param_0];
 	mul.wide.s32 	%rd13, %r1, 4;
-	add.s64 	%rd16, %rd13, %rd12;
-	add.s64 	%rd15, %rd13, %rd11;
+	add.s64 	%rd15, %rd13, %rd12;
+	add.s64 	%rd16, %rd13, %rd11;
 	add.s64 	%rd14, %rd13, %rd10;
 	add.s32 	%r9, %r1, 1;
 $L__BB0_3:                              // %BB_0100
                                         // =>This Inner Loop Header: Depth=1
-	ld.global.f32 	%f1, [%rd15];
+	ld.global.f32 	%f1, [%rd16];
 	ld.global.f32 	%f2, [%rd14];
-	ld.global.f32 	%f3, [%rd16];
+	ld.global.f32 	%f3, [%rd15];
 	add.rn.f32 	%f4, %f1, %f2;
 	add.rn.f32 	%f5, %f4, %f3;
-	st.global.f32 	[%rd16], %f5;
+	st.global.f32 	[%rd15], %f5;
 	setp.ge.s32 	%p2, %r9, %r5;
 	@%p2 bra 	$L__BB0_5;
 // %bb.4:                               // %BB_0231

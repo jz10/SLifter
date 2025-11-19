@@ -341,5 +341,6 @@ class Pack64(SaSSTransform):
                     new_insts.append(inst)
                 block.instructions = new_insts
 
+        self.total_pack64 = count
         print(f"Total PACK64 instructions added: {count}")
         print("=== End of Pack64 Transformation ===")

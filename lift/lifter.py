@@ -28,8 +28,8 @@ class Lifter:
 
 
     def LiftModule(self, module, outfile):
-        passes = self.get_transform_passes()
-        transforms = Transforms(passes, verbose=self._verbose)
+        self.passes = self.get_transform_passes()
+        transforms = Transforms(self.passes, verbose=self._verbose)
         if not self._verbose:
             with contextlib.redirect_stdout(io.StringIO()):
                 transforms.apply(module)

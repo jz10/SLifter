@@ -2,6 +2,7 @@ from llvmlite import ir, binding
 import re
 
 
+from transform.cg_patterns import CGPatterns
 from transform.pack64 import Pack64
 from transform.sr_substitute import SR_TO_OFFSET, SRSubstitute
 from transform.opmod_transform import OpModTransform
@@ -33,6 +34,7 @@ class X86Lifter(Lifter):
 
     def get_transform_passes(self):
         return [
+            CGPatterns(),
             Pack64(),
             SRSubstitute(),
             OpModTransform(),
@@ -757,6 +759,10 @@ class X86Lifter(Lifter):
             pass
 
         elif opcode == "SYNC":
+            pass
+        
+        
+        elif opcode == "WARPSYNC":
             pass
         
         elif opcode == "BRA":
