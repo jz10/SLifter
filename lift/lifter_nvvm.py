@@ -375,9 +375,18 @@ class NVVMLifter(Lifter):
             v1 = _get_val(uses[0], "imad_lhs")
             v2 = _get_val(uses[1], "imad_rhs")
             v3 = _get_val(uses[2], "imad_addend")
-
-
-            tmp = IRBuilder.mul(v1, v2, "imad_tmp")
+            
+            high = "HI" in Inst.opcodes
+            
+            if high:
+                v1 = IRBuilder.zext(v1, self.ir.IntType(64), "imad_lhs_64")
+                v2 = IRBuilder.zext(v2, self.ir.IntType(64), "imad_rhs_64")
+                tmp = IRBuilder.mul(v1, v2, "imad_tmp_64")
+                tmp = IRBuilder.lshr(tmp, self.ir.Constant(self.ir.IntType(64), 32), "imad_tmp_hi")
+                tmp = IRBuilder.trunc(tmp, dest.GetIRType(self), "imad_tmp_hi_trunc")
+            else:
+                tmp = IRBuilder.mul(v1, v2, "imad_tmp")
+                
             tmp = IRBuilder.add(tmp, v3, "imad")
             IRRegs[dest.GetIRName(self)] = tmp
 
@@ -385,9 +394,9 @@ class NVVMLifter(Lifter):
             dest = Inst.GetDefs()[0]
             uses = Inst.GetUses()
             v1 = _get_val(uses[0], "imad_lhs")
-            v1_64 = IRBuilder.sext(v1, self.ir.IntType(64), "imad_lhs_64")
+            v1_64 = IRBuilder.zext(v1, self.ir.IntType(64), "imad_lhs_64")
             v2 = _get_val(uses[1], "imad_rhs")
-            v2_64 = IRBuilder.sext(v2, self.ir.IntType(64), "imad_rhs_64")
+            v2_64 = IRBuilder.zext(v2, self.ir.IntType(64), "imad_rhs_64")
             v3 = _get_val(uses[2], "imad_addend")
 
 
@@ -910,7 +919,7 @@ class NVVMLifter(Lifter):
 
             intrinsic_name = None
             if func == "RCP":
-                intrinsic_name = "llvm.nvvm.rcp.approx.f"
+                intrinsic_name = "llvm.nvvm.rcp.approx.ftz.f"
             elif func == "RSQ":
                 intrinsic_name = "llvm.nvvm.rsqrt.approx.f"
             elif func == "SQRT":

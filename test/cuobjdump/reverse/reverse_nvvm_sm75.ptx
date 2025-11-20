@@ -23,7 +23,7 @@
 	ld.param.u64 	%rd1, [_Z7reversePii_param_0];
 	ld.param.u32 	%r1, [_Z7reversePii_param_1];
 	mov.u32 	%r2, %tid.x;
-	mul.wide.s32 	%rd2, %r2, 4;
+	mul.wide.u32 	%rd2, %r2, 4;
 	add.s64 	%rd3, %rd2, %rd1;
 	ld.global.u32 	%r3, [%rd3];
 	not.b32 	%r4, %r2;

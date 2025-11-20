@@ -32,7 +32,7 @@
 $L__BB0_2:                              // %BB_0040
 	ld.param.u64 	%rd2, [_Z5saxpyiPKfPf_param_2];
 	ld.param.u64 	%rd1, [_Z5saxpyiPKfPf_param_1];
-	mul.wide.s32 	%rd3, %r1, 4;
+	mul.wide.u32 	%rd3, %r1, 4;
 	add.s64 	%rd4, %rd3, %rd1;
 	add.s64 	%rd5, %rd3, %rd2;
 	ld.global.f32 	%f1, [%rd4];

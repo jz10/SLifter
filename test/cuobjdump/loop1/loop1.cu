@@ -10,7 +10,7 @@ __global__ void loop1(const float* A, const float* B, float* C, int n) {
     for (int i = idx; i < n; i += 1)
         sum += i;
 
-    C[idx] = sum;
+    C[idx] = sum + A[idx] + B[idx];
 }
 
 int main() {

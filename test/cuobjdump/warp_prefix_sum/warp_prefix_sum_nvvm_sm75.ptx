@@ -29,7 +29,7 @@
 	mad.lo.s32 	%r2, %r9, %r10, %r1;
 	setp.ge.s32 	%p1, %r2, %r7;
 	mov.b32 	%r25, 0;
-	mul.wide.s32 	%rd7, %r2, 4;
+	mul.wide.u32 	%rd7, %r2, 4;
 	@%p1 bra 	$L__BB0_2;
 // %bb.1:                               // %BB_0061
 	ld.param.u64 	%rd1, [_Z15warp_prefix_sumPKiPii_param_0];

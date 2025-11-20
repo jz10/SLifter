@@ -76,6 +76,9 @@ class Operand:
                         OffsetOrImm = float(SubOperand)
                     except ValueError:
                         pass
+                if Prefix == '-' and OffsetOrImm is not None:
+                    OffsetOrImm = -OffsetOrImm
+                    Prefix = None
                 continue
             
             # Otherwise suboperand is a register
@@ -428,7 +431,7 @@ class Operand:
             inner = ""
             if self.Reg:
                 reg_text = self.Reg
-                if self.Suffix:
+                if self.Suffix and self.Suffix != "reuse":
                     reg_text = f"{reg_text}.{self.Suffix}"
                 inner = reg_text
             if self.IndexReg:
@@ -459,7 +462,7 @@ class Operand:
             else:
                 s = self.Reg
 
-            if self.Suffix:
+            if self.Suffix and self.Suffix != "reuse":
                 return f"{s}.{self.Suffix}"
             else:
                 return s

@@ -37,7 +37,7 @@ $L__BB0_2:                              // %BB_0060
 	ld.param.u64 	%rd3, [_Z9vectorAddPKfS0_Pfi_param_2];
 	ld.param.u64 	%rd2, [_Z9vectorAddPKfS0_Pfi_param_1];
 	ld.param.u64 	%rd1, [_Z9vectorAddPKfS0_Pfi_param_0];
-	mul.wide.s32 	%rd4, %r1, 4;
+	mul.wide.u32 	%rd4, %r1, 4;
 	add.s64 	%rd5, %rd4, %rd2;
 	add.s64 	%rd6, %rd4, %rd1;
 	ld.global.f32 	%f1, [%rd5];

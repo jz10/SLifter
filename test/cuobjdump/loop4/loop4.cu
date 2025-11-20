@@ -6,10 +6,8 @@ __global__ void loop4(const float* A, const float* B, float* C, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     
-    int sum = 0;
-    #pragma unroll 1
     for (int i = idx; i < n; i += 1)
-        C[i] += A[i] + B[i];
+        C[idx] += A[i] + B[i];
 }
 
 int main() {

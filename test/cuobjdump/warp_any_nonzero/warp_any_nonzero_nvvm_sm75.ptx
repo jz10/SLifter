@@ -35,7 +35,7 @@
 	@%p6 bra 	$L__BB0_2;
 // %bb.1:                               // %BB_00b0
 	ld.param.u64 	%rd1, [_Z16warp_any_nonzeroPKiPii_param_0];
-	mul.wide.s32 	%rd3, %r2, 4;
+	mul.wide.u32 	%rd3, %r2, 4;
 	add.s64 	%rd4, %rd3, %rd1;
 	ld.global.u32 	%r9, [%rd4];
 	setp.ne.s32 	%p9, %r9, 0;

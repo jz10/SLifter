@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     CUCHK(cuMemcpyHtoD(d_a, a.data(), vec_bytes));
     CUCHK(cuMemcpyHtoD(d_b, b.data(), vec_bytes));
     CUCHK(cuMemsetD8(d_c, 0, vec_bytes));
-
+    
     void* params[] = {&d_a, &d_b, &d_c, &cfg.n};
     CUCHK(cuLaunchKernel(
         fn,
@@ -78,16 +78,15 @@ int main(int argc, char** argv) {
 
     bool ok = true;
     const int total_threads = cfg.total_threads();
-    for (int j = 0; j < cfg.n; ++j) {
-        int updates = std::min(j + 1, total_threads);
-        double expected = static_cast<double>(updates) *
-                          (static_cast<double>(a[j]) + static_cast<double>(b[j]));
-        double got = static_cast<double>(c[j]);
+    for (int tid = 0; tid < cfg.n; ++tid) {
+        int expected = 0;
+        for (int i = tid; i < cfg.n; i += 1)
+            expected += a[i] + b[i];
+
         double tol = 1e-3 * std::fabs(expected);
-        if (std::fabs(got - expected) > tol) {
-            std::cerr << "Mismatch at " << j << ": got " << c[j]
-                      << ", expected " << expected
-                      << " (updates=" << updates << ")\n";
+        if (std::fabs(c[tid] - expected) > tol) {
+            std::cerr << "Mismatch at " << tid << ": got " << c[tid]
+                      << ", expected " << expected << "\n";
             ok = false;
             break;
         }

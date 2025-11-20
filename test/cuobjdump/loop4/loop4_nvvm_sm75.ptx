@@ -18,48 +18,102 @@
 	.param .u32 _Z5loop4PKfS0_Pfi_param_3
 )
 {
-	.reg .pred 	%p<3>;
-	.reg .b32 	%r<10>;
-	.reg .f32 	%f<6>;
-	.reg .b64 	%rd<17>;
+	.reg .pred 	%p<6>;
+	.reg .b32 	%r<23>;
+	.reg .f32 	%f<27>;
+	.reg .b64 	%rd<26>;
 
 // %bb.0:                               // %EntryBB_0000
-	ld.param.u32 	%r5, [_Z5loop4PKfS0_Pfi_param_3];
-	mov.u32 	%r6, %ctaid.x;
-	mov.u32 	%r7, %tid.x;
-	mov.u32 	%r8, %ntid.x;
-	mad.lo.s32 	%r1, %r6, %r8, %r7;
-	setp.lt.s32 	%p1, %r1, %r5;
+	ld.param.u32 	%r14, [_Z5loop4PKfS0_Pfi_param_3];
+	mov.u32 	%r15, %ctaid.x;
+	mov.u32 	%r1, %tid.x;
+	mov.u32 	%r16, %ntid.x;
+	mul.lo.s32 	%r2, %r15, %r16;
+	add.s32 	%r21, %r2, %r1;
+	setp.lt.s32 	%p1, %r21, %r14;
 	@%p1 bra 	$L__BB0_2;
-// %bb.1:                               // %BB_0051
+// %bb.1:                               // %BB_0061
 	ret;
-$L__BB0_2:                              // %BB_0060
-	ld.param.u64 	%rd12, [_Z5loop4PKfS0_Pfi_param_2];
-	ld.param.u64 	%rd11, [_Z5loop4PKfS0_Pfi_param_1];
-	ld.param.u64 	%rd10, [_Z5loop4PKfS0_Pfi_param_0];
-	mul.wide.s32 	%rd13, %r1, 4;
-	add.s64 	%rd15, %rd13, %rd12;
-	add.s64 	%rd16, %rd13, %rd11;
-	add.s64 	%rd14, %rd13, %rd10;
-	add.s32 	%r9, %r1, 1;
-$L__BB0_3:                              // %BB_0100
-                                        // =>This Inner Loop Header: Depth=1
-	ld.global.f32 	%f1, [%rd16];
-	ld.global.f32 	%f2, [%rd14];
-	ld.global.f32 	%f3, [%rd15];
-	add.rn.f32 	%f4, %f1, %f2;
-	add.rn.f32 	%f5, %f4, %f3;
-	st.global.f32 	[%rd15], %f5;
-	setp.ge.s32 	%p2, %r9, %r5;
-	@%p2 bra 	$L__BB0_5;
-// %bb.4:                               // %BB_0231
-                                        //   in Loop: Header=BB0_3 Depth=1
-	add.s32 	%r9, %r9, 1;
-	add.s64 	%rd14, %rd14, 4;
-	add.s64 	%rd15, %rd15, 4;
-	add.s64 	%rd16, %rd16, 4;
+$L__BB0_2:                              // %BB_0070
+	ld.param.u64 	%rd16, [_Z5loop4PKfS0_Pfi_param_2];
+	ld.param.u64 	%rd15, [_Z5loop4PKfS0_Pfi_param_1];
+	ld.param.u64 	%rd14, [_Z5loop4PKfS0_Pfi_param_0];
+	not.b32 	%r17, %r2;
+	sub.s32 	%r18, %r14, %r1;
+	sub.s32 	%r19, %r18, %r2;
+	add.s32 	%r4, %r18, %r17;
+	and.b32  	%r5, %r19, 3;
+	mul.wide.u32 	%rd17, %r21, 4;
+	add.s64 	%rd1, %rd17, %rd16;
+	setp.eq.s32 	%p2, %r5, 0;
+	@%p2 bra 	$L__BB0_6;
 	bra.uni 	$L__BB0_3;
-$L__BB0_5:                              // %BB_0240
+$L__BB0_6:                              // %BB_02b0
+	setp.gt.u32 	%p4, %r4, 2;
+	@%p4 bra 	$L__BB0_8;
+// %bb.7:                               // %BB_02c1
+	ret;
+$L__BB0_3:                              // %BB_0120
+	ld.global.f32 	%f25, [%rd1];
+	mul.wide.s32 	%rd18, %r21, 4;
+	add.s64 	%rd22, %rd18, %rd15;
+	add.s64 	%rd23, %rd18, %rd14;
+	add.s32 	%r20, %r5, -1;
+	add.s32 	%r21, %r21, %r5;
+$L__BB0_4:                              // %BB_01b0
+                                        // =>This Inner Loop Header: Depth=1
+	ld.global.f32 	%f7, [%rd22];
+	ld.global.f32 	%f8, [%rd23];
+	add.rn.f32 	%f9, %f7, %f8;
+	add.rn.f32 	%f25, %f9, %f25;
+	st.global.f32 	[%rd1], %f25;
+	setp.eq.s32 	%p3, %r20, 0;
+	@%p3 bra 	$L__BB0_6;
+// %bb.5:                               // %BB_02a1
+                                        //   in Loop: Header=BB0_4 Depth=1
+	add.s32 	%r20, %r20, -1;
+	add.s64 	%rd22, %rd22, 4;
+	add.s64 	%rd23, %rd23, 4;
+	bra.uni 	$L__BB0_4;
+$L__BB0_8:                              // %BB_02d0
+	ld.global.f32 	%f26, [%rd1];
+	ld.const.u64 	%rd19, [const_mem+8192];
+	mul.wide.u32 	%rd20, %r21, 4;
+	add.s64 	%rd21, %rd20, %rd19;
+	add.s64 	%rd25, %rd21, %rd14;
+	add.s64 	%rd24, %rd21, %rd15;
+	add.s32 	%r22, %r21, 4;
+$L__BB0_9:                              // %BB_0330
+                                        // =>This Inner Loop Header: Depth=1
+	ld.global.f32 	%f10, [%rd24];
+	ld.global.f32 	%f11, [%rd25];
+	add.rn.f32 	%f12, %f10, %f11;
+	add.rn.f32 	%f13, %f12, %f26;
+	st.global.f32 	[%rd1], %f13;
+	ld.global.f32 	%f14, [%rd24];
+	ld.global.f32 	%f15, [%rd25];
+	add.rn.f32 	%f16, %f14, %f15;
+	add.rn.f32 	%f17, %f13, %f16;
+	st.global.f32 	[%rd1], %f17;
+	ld.global.f32 	%f18, [%rd24];
+	ld.global.f32 	%f19, [%rd25];
+	add.rn.f32 	%f20, %f18, %f19;
+	add.rn.f32 	%f21, %f17, %f20;
+	st.global.f32 	[%rd1], %f21;
+	ld.global.f32 	%f22, [%rd24];
+	ld.global.f32 	%f23, [%rd25];
+	setp.ge.s32 	%p5, %r22, %r14;
+	add.rn.f32 	%f24, %f22, %f23;
+	add.rn.f32 	%f26, %f21, %f24;
+	st.global.f32 	[%rd1], %f26;
+	@%p5 bra 	$L__BB0_11;
+// %bb.10:                              // %BB_04f1
+                                        //   in Loop: Header=BB0_9 Depth=1
+	add.s32 	%r22, %r22, 4;
+	add.s64 	%rd24, %rd24, 16;
+	add.s64 	%rd25, %rd25, 16;
+	bra.uni 	$L__BB0_9;
+$L__BB0_11:                             // %BB_0500
 	ret;
                                         // -- End function
 }

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -8,7 +9,7 @@
 
 namespace {
 
-constexpr char kKernelName[] = "_Z5loop1PKfS0_Pfi";
+constexpr char kKernelName[] = "_Z9vectorAddPKfS0_Pfi";
 
 struct ProblemConfig {
     int n = 1024;
@@ -30,16 +31,22 @@ int main(int argc, char** argv) {
     const char* cubin_path = argv[1];
     ProblemConfig cfg;
 
-    std::vector<float> a(cfg.n);
-    std::vector<float> b(cfg.n);
+    std::vector<float> a(cfg.n, 0.0f);
+    std::vector<float> b(cfg.n, 0.0f);
     std::vector<float> c(cfg.n, 0.0f);
 
     std::random_device dev;
     std::mt19937 gen(dev());
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    std::uniform_real_distribution<float> a_dist(-10.0f, 10.0f);
+    std::uniform_int_distribution<int> denom_dist(1, 10);
+    std::bernoulli_distribution sign_dist(0.5);
     for (int i = 0; i < cfg.n; ++i) {
-        a[i] = dist(gen);
-        b[i] = dist(gen);
+        a[i] = a_dist(gen);
+        int denom = denom_dist(gen);
+        if (sign_dist(gen)) {
+            denom = -denom;
+        }
+        b[i] = static_cast<float>(denom);
     }
 
     CuDriverSession session;
@@ -72,11 +79,13 @@ int main(int argc, char** argv) {
     CUCHK(cuMemcpyDtoH(c.data(), d_c, bytes));
 
     bool ok = true;
-    for (int idx = 0; idx < cfg.n; ++idx) {
-        double expected = (static_cast<double>(cfg.n - 1) + idx) * (cfg.n - idx) * 0.5
-                          + static_cast<double>(a[idx]) + static_cast<double>(b[idx]);
-        if (std::fabs(static_cast<double>(c[idx]) - expected) > 1e-3 * expected) {
-            std::cerr << "Mismatch at " << idx << ": got " << c[idx]
+    for (int i = 0; i < cfg.n; ++i) {
+        const float expected =
+            a[i] / b[i] +
+            static_cast<float>(static_cast<int>(a[i]) / static_cast<int>(b[i]));
+        if (std::fabs(c[i] - expected) > 1e-4f) {
+            std::cerr << "FAIL at index " << i
+                      << ": got " << c[i]
                       << ", expected " << expected << '\n';
             ok = false;
             break;
@@ -93,4 +102,3 @@ int main(int argc, char** argv) {
 
     return ok ? 0 : 1;
 }
-

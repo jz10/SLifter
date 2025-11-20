@@ -175,13 +175,7 @@ def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], ba
                 cu_path = test_dir / f"{testname}.cu"
         else:
             cu_path = test_dir / f"{testname}.cu"
-        legacy = test_dir / f"{testname}.sass"
-        # Try rename legacy first
-        if legacy.exists() and not force_rebuild:
-            try:
-                legacy.rename(desired_sass_path)
-            except Exception:
-                legacy.unlink(missing_ok=True)
+            
         # If still absent, try compiling from .cu (handle multi-file projects)
         should_compile = cu_path.exists() and (force_rebuild or not desired_sass_path.exists())
         if should_compile:

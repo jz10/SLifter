@@ -65,7 +65,7 @@ class TypeAnalysis(SaSSTransform):
             "PRMT": [[INT32], [NUM32, NUM32, NUM32]],
             "HMMA": [[FLOAT32] * 4, [FLOAT32] * 8],
             "MOV": [[NUM32], [NUM32]],
-            "SHL": [[INT32], [INT32, INT32]],
+            "SHL": [[INT32], [INT32, INT32, INT32]],
             
             # Predicate instructions
             "PLOP3": [[BOOL, BOOL], [BOOL, BOOL, BOOL, INT32, BOOL]],
@@ -114,7 +114,7 @@ class TypeAnalysis(SaSSTransform):
             "CAST64": [[NUM64], [NUM32]],
             "IADD64": [[INT64], [INT64, INT64]],
             "IMAD64": [[INT64], [INT32, INT32, INT64]],
-            "SHL64": [[INT64], [INT64, INT64]],
+            "SHL64": [[INT64], [INT64, INT64, INT64]],
             "IADD32I64": [[INT64], [INT64, INT32]],
             "BITCAST": [[TOP], [TOP]],
             "PBRA": [[], [BOOL, INT32, INT32]],
@@ -192,20 +192,20 @@ class TypeAnalysis(SaSSTransform):
         
         while Changed:
 
-            for BB in WorkList:
-                for Inst in BB.instructions:
-                    print(str(Inst)+" => ", end="")
-                    for Operand in Inst.operands:
-                        if Operand in OpTypes:
-                            TypeDesc = str(OpTypes[Operand])
-                        elif Operand.Reg in OpTypes:
-                            TypeDesc = str(OpTypes[Operand.Reg])
-                        else:
-                            TypeDesc = "NOTYPE"
-                        print(TypeDesc+", ",end="")
-                    print("")
+            # for BB in WorkList:
+            #     for Inst in BB.instructions:
+            #         print(str(Inst)+" => ", end="")
+            #         for Operand in Inst.operands:
+            #             if Operand in OpTypes:
+            #                 TypeDesc = str(OpTypes[Operand])
+            #             elif Operand.Reg in OpTypes:
+            #                 TypeDesc = str(OpTypes[Operand.Reg])
+            #             else:
+            #                 TypeDesc = "NOTYPE"
+            #             print(TypeDesc+", ",end="")
+            #         print("")
 
-            print("-----next iteration-----")
+            # print("-----next iteration-----")
 
             Changed = False
             self.Conflicts = {}

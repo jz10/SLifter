@@ -29,7 +29,8 @@ int main() {
 
     bool ok = true;
     for (int idx = 0; idx < N; ++idx) {
-        double expected = (static_cast<double>(N - 1) + idx) * (N - idx) * 0.5; // sum_{i=idx}^{N-1} i
+        double expected = (static_cast<double>(N - 1) + idx) * (N - idx) * 0.5 + 
+                          static_cast<double>(A[idx]) + static_cast<double>(B[idx]);
         if (std::fabs(static_cast<double>(C[idx]) - expected) > 1e-3 * expected) {
             std::cerr << "Mismatch at " << idx << ": got " << C[idx]
                       << ", expected " << expected << std::endl;
