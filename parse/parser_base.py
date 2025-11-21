@@ -1,368 +1,313 @@
-from sir.function import Function
-from sir.basicblock import BasicBlock
-from sir.instruction import Instruction
-from sir.controlcode import ControlCode
-from sir.operand import Operand
-from sir.operand import InvalidOperandException
 import re
+
+from sir.basicblock import BasicBlock
+from sir.controlcode import ControlCode
+from sir.function import Function
+from sir.instruction import Instruction
+from sir.operand import InvalidOperandException, Operand
+
 
 class NoParsingEffort(Exception):
     pass
 
+
 class UnmatchedControlCode(Exception):
     pass
+
 
 class SaSSParserBase:
     def __init__(self, isa, file):
         self.file = file
 
-    # Parse the SaSS text file
     def apply(self):
-        # List of functions
-        Funcs = []
+        funcs = []
+        curr_func = None
+        insts = []
 
-        # The current function that is under parsing
-        CurrFunc = None
-
-        # The instruction list
-        Insts = []
-
-        # Handle dual issue(remove curly braces)
-        lines = self.file.split('\n')
+        lines = self.file.split("\n")
         modified_lines = []
         skip_next = False
         for i, line in enumerate(lines):
             if skip_next:
                 skip_next = False
                 continue
-            if '{' in line:
+            if "{" in line:
                 line = line.replace("{", "")
             if "}" in line:
                 if line[-1] != "/":
                     line = line + lines[i + 1]
                     line = line.replace("\n", "")
                     skip_next = True
-                line = line.replace("}",";")
+                line = line.replace("}", ";")
             modified_lines.append(line)
 
         lines = modified_lines
 
-        # Main loop that parse the SaSS text file
-        for line_num, line in enumerate(lines):
-            # Process lines in SaSS text file
-
-            # Process function title and misc
-            PrevFunc = CurrFunc
-            CurrFunc = self.CreateFunction(line, PrevFunc, Insts)
-            if PrevFunc != CurrFunc and CurrFunc != None:
-                # Just create a new functino
-                if PrevFunc != None:
-                    # Add the parsed function
-                    Funcs.append(PrevFunc)
-                    # Clean the instruction list
-                    Insts = []
-                    
+        for _, line in enumerate(lines):
+            prev_func = curr_func
+            curr_func = self.create_function(line, prev_func, insts)
+            if prev_func != curr_func and curr_func is not None:
+                if prev_func is not None:
+                    funcs.append(prev_func)
+                    insts = []
                 continue
-            else:
-                CurrFunc = PrevFunc
-                
-            # Process function body
-            self.ParseFuncBody(line, Insts, CurrFunc)
+            curr_func = prev_func
+            self.parse_func_body(line, insts, curr_func)
 
-        # Process the last function
-        if CurrFunc != None:
-            # Wrap up previous function by creating control-flow graph
-            CurrFunc.blocks = self.CreateCFG(Insts)
+        if curr_func is not None:
+            curr_func.blocks = self.create_cfg(insts)
+            funcs.append(curr_func)
 
-            # Add the parsed function
-            Funcs.append(CurrFunc)
-            
-        return Funcs
+        return funcs
 
-    # Parse the file line to create new function
-    def CreateFunction(self, line, PrevFunc, Insts):
-        if (not ("/*" in line and "*/" in line)):
-            # Check function start
-            if ("Function : " in line):
-                # Wrap up previous function by creating control-flow graph
-                if PrevFunc != None:
-                    PrevFunc.blocks = self.CreateCFG(Insts)
-                # Check the function name
-                items = line.split(' : ')
-
-                # Create new function
+    def create_function(self, line, prev_func, insts):
+        if "/*" not in line or "*/" not in line:
+            if "Function : " in line:
+                if prev_func is not None:
+                    prev_func.blocks = self.create_cfg(insts)
+                items = line.split(" : ")
                 return Function(items[1])
-
         return None
 
-    # Parse the function body from file lines
-    def ParseFuncBody(self, line, Insts):
+    def parse_func_body(self, line, insts, curr_func):
         raise NoParsingEffort
 
-
-
-    # Retrieve instruction ID
-    def GetInstNum(self, line):
-        items = line.split('/*')
+    def get_inst_num(self, line):
+        items = line.split("/*")
         return items[1]
-    
-    # Retrieve instruction's opcode
-    def GetInstOpcode(self, line):
-        items = line.split(';')
-        line = (items[0].lstrip())
-        items = line.split(' ')
-        # Get opcode
+
+    def get_inst_opcode(self, line):
+        items = line.split(";")
+        line = items[0].lstrip()
+        items = line.split(" ")
         opcode = items[0]
-        PFlag = None
+        pflag = None
 
         pred_reg = None
-        not_ = False
-        if opcode.startswith('@'):
-            opcode = opcode[1:]        
-        if opcode.startswith('!'):
-            not_ = True
+        is_not = False
+        if opcode.startswith("@"):
             opcode = opcode[1:]
-        if opcode.startswith('P') and opcode[1].isdigit():
+        if opcode.startswith("!"):
+            is_not = True
+            opcode = opcode[1:]
+        if opcode.startswith("P") and opcode[1].isdigit():
             pred_reg = opcode
-        
+
         rest_content = line.replace(items[0], "")
-        
+
         if pred_reg:
-            prefix = '!' if not_ else None
-            PFlag = Operand.fromReg(pred_reg, pred_reg, prefix=prefix)
+            prefix = "!" if is_not else None
+            pflag = Operand.from_reg(pred_reg, pred_reg, prefix=prefix)
             opcode = items[1]
             rest_content = rest_content.replace(items[1], "")
 
-        return opcode, PFlag, rest_content
+        return opcode, pflag, rest_content
 
-    # Retrieve instruction's operands
-    def GetInstOperands(self, line):
-        items = line.split(',')
+    def get_inst_operands(self, line):
+        items = line.split(",")
         ops = []
         for item in items:
             operand = item.lstrip()
-            if (operand != ''):
+            if operand != "":
                 ops.append(operand)
+        return ops
 
-        return ops 
+    def parse_instruction(
+        self, inst_id, opcode_content, pflag, operands_content, operands_detail, curr_func
+    ):
+        opcodes = opcode_content.split(".")
 
-    # Parse instruction, includes operators and operands
-    def ParseInstruction(self, InstID, Opcode_Content, PFlag, Operands_Content, Operands_Detail, CurrFunc):
-        # Parse opcodes
-        Opcodes = Opcode_Content.split('.')
+        operands = []
+        for operand_content in operands_content:
+            operands.append(Operand.parse(operand_content))
 
-        # Parse operands
-        Operands = []
-        for Operand_Content in Operands_Content:
-            Operands.append(Operand.Parse(Operand_Content))
-
-        # Create instruction
-        inst = Instruction(InstID, Opcodes, Operands, None, PFlag)
-        raw_content = Opcode_Content
-        if Operands_Detail:
-            raw_content = f"{Opcode_Content} {Operands_Detail}"
-        inst._InstContent = raw_content
+        inst = Instruction(inst_id, opcodes, operands, None, pflag)
+        raw_content = opcode_content
+        if operands_detail:
+            raw_content = f"{opcode_content} {operands_detail}"
+        inst.inst_content = raw_content
         return inst
 
-    # Parse the argument offset
-    def GetArgOffset(self, offset):
-        offset = offset.replace('[', "")
-        offset = offset.replace(']', "")
-        return int(offset, base = 16)
+    def get_arg_offset(self, offset):
+        offset = offset.replace("[", "")
+        offset = offset.replace("]", "")
+        return int(offset, base=16)
 
-    # Parse control code 
-    def ParseControlCode(self, Content, ControlCodes):
-       raise NoParsingEffort
+    def parse_control_code(self, content, control_codes):
+        raise NoParsingEffort
 
-    #Create the control-flow graph
-    def CreateCFG(self, Insts):
-        # Preprocess 1: branch may target non-instruction address
-        # Align address upward to the next instruction
-        addr_set  = {int(inst.id,16) for inst in Insts} 
+    def create_cfg(self, insts):
+        addr_set = {int(inst.id, 16) for inst in insts}
         addr_list = sorted(a for a in addr_set)
+
         def _align_up_to_inst(addr_hex):
             addr = int(addr_hex, 16)
             max_addr = addr_list[-1]
 
             while addr not in addr_set and addr <= max_addr:
-                addr += 0x8 
+                addr += 0x8
             return addr
-        for inst in Insts:
-            if inst.IsBranch():
-                target_addr = _align_up_to_inst(inst.operands[-1].__str__().zfill(4))
-                inst.operands[0].Name = format(target_addr, '04x')
-                inst.operands[0].ImmediateValue = target_addr
 
-        # Identify leaders
+        for inst in insts:
+            if inst.is_branch():
+                target_addr = _align_up_to_inst(inst.operands[-1].__str__().zfill(4))
+                inst.operands[0].name = format(target_addr, "04x")
+                inst.operands[0].immediate_value = target_addr
+
         leaders = set()
         predicated_leaders = set()
         curr_pred = None
-        for i, inst in enumerate(Insts):
-            if inst.IsReturn() or inst.IsExit():
-                if i + 1 < len(Insts):
-                    leaders.add(Insts[i+1].id)
-            if inst.IsBranch():
-                leaders.add(inst.operands[0].Name.zfill(4))
+        for i, inst in enumerate(insts):
+            if inst.is_return() or inst.is_exit():
+                if i + 1 < len(insts):
+                    leaders.add(insts[i + 1].id)
+            if inst.is_branch():
+                leaders.add(inst.operands[0].name.zfill(4))
             if str(curr_pred) != str(inst.pflag):
-                leaders.add(Insts[i].id)
-                if inst.Predicated():
-                    predicated_leaders.add(Insts[i].id)
+                leaders.add(insts[i].id)
+                if inst.predicated():
+                    predicated_leaders.add(insts[i].id)
                 curr_pred = inst.pflag
 
-        # Create basic blocks
-        Blocks = []
-        BlockInsts = []
+        blocks = []
+        block_insts = []
         pflag = None
-        PrevBlock = None
-        NextBlock = {}
-        BlockByAddr = {}
-        PredicatedBlocks = set()
-        for inst in Insts:
+        prev_block = None
+        next_block = {}
+        block_by_addr = {}
+        predicated_blocks = set()
+        for inst in insts:
             if inst.id in leaders:
-                if BlockInsts:
-                    BlockId = f"{int(BlockInsts[0].id, 16):04X}"
-                    
-                    # If leader in predicated leaders, insert a PBRA at start,
-                    # remove the predicate of other instructions
-                    PredicatedBlock = False
-                    if BlockInsts[0].id in predicated_leaders:
-                        PredicatedBlock = True
-                        pflag = BlockInsts[0].pflag.Clone()
-                        pbra_inst = Instruction(
-                            id=f"{int(BlockInsts[0].id, 16):04X}",
-                            opcodes=["PBRA"],
-                            operands=[BlockInsts[0].pflag.Clone()],
-                            parentBB=None,
-                            pflag=None
-                        )
-                        BlockInsts.insert(0, pbra_inst)
-                        BlockInsts[1]._id = f"{int(BlockInsts[0].id, 16)+1:04X}"
-                        for PredInst in BlockInsts:
-                            PredInst._PFlag = None
+                if block_insts:
+                    block_id = f"{int(block_insts[0].id, 16):04X}"
 
-                    # Create block
-                    Block = BasicBlock(BlockId, pflag, BlockInsts)
+                    predicated_block = False
+                    if block_insts[0].id in predicated_leaders:
+                        predicated_block = True
+                        pflag = block_insts[0].pflag.clone()
+                        pbra_inst = Instruction(
+                            id=f"{int(block_insts[0].id, 16):04X}",
+                            opcodes=["PBRA"],
+                            operands=[block_insts[0].pflag.clone()],
+                            parentBB=None,
+                            pflag=None,
+                        )
+                        block_insts.insert(0, pbra_inst)
+                        block_insts[1].id = f"{int(block_insts[0].id, 16)+1:04X}"
+                        for pred_inst in block_insts:
+                            pred_inst.pflag = None
+
+                    block = BasicBlock(block_id, pflag, block_insts)
                     pflag = None
-                    Blocks.append(Block)
-                    
-                    if PrevBlock:
-                        NextBlock[PrevBlock] = Block
-                    PrevBlock = Block
-                    
-                    BlockByAddr[Block.addr_content] = Block
-                    
-                    if PredicatedBlock:
-                        PredicatedBlocks.add(Block)
-                    
-                BlockInsts = [inst]
+                    blocks.append(block)
+
+                    if prev_block:
+                        next_block[prev_block] = block
+                    prev_block = block
+
+                    block_by_addr[block.addr_content] = block
+
+                    if predicated_block:
+                        predicated_blocks.add(block)
+
+                block_insts = [inst]
             else:
-                BlockInsts.append(inst)
-                
-        # Construct CFG edges
-        for Block in Blocks:
-            Terminator = Block.GetTerminator()
-            
-            # If no branch, insert branch to the next block
-            if not Terminator:
-                NextB = NextBlock[Block]
-                DestOp = Operand.fromImmediate(NextB.addr_content, int(NextB.addr_content, 16))                        
-                NewInst = Instruction(
-                    id=f"{int(Block.instructions[-1].id, 16)+1:04X}",
-                    opcodes=["BRA"],
-                    operands=[DestOp]
+                block_insts.append(inst)
+
+        for block in blocks:
+            terminator = block.get_terminator()
+
+            if not terminator:
+                succ_block = next_block[block]
+                dest_op = Operand.from_immediate(
+                    succ_block.addr_content, int(succ_block.addr_content, 16)
                 )
-                Block.instructions.append(NewInst)
-                
-                Block.AddSucc(NextB)
-                NextB.AddPred(Block)
-            elif Terminator.IsBranch():
-                # If the terminator is a branch, add the successor
-                DestOp = Terminator.GetUses()[0]
-                NextB = BlockByAddr[DestOp.Name]
-                Block.AddSucc(NextB)
-                NextB.AddPred(Block)
-            elif Terminator.IsReturn() or Terminator.IsExit():
-                # If the terminator is a return or exit, do nothing
+                new_inst = Instruction(
+                    id=f"{int(block.instructions[-1].id, 16)+1:04X}",
+                    opcodes=["BRA"],
+                    operands=[dest_op],
+                )
+                block.instructions.append(new_inst)
+
+                block.add_succ(succ_block)
+                succ_block.add_pred(block)
+            elif terminator.is_branch():
+                dest_op = terminator.get_uses()[0]
+                succ_block = block_by_addr[dest_op.name]
+                block.add_succ(succ_block)
+                succ_block.add_pred(block)
+            elif terminator.is_return() or terminator.is_exit():
                 pass
             else:
                 raise Exception("Unrecognized terminator")
-            
-        # Process predicated blocks
-        InsertBlock = {}
-        for block in PredicatedBlocks:
-            # Split block by leaving pbra in the original block, rest put in a new block
-            pbraInst = block.instructions[0]
-            NewBlockInsts = block.instructions[1:]
-            NewBlock = BasicBlock(NewBlockInsts[0].id, None, NewBlockInsts)
-            block.instructions = [pbraInst]
-            
-            # Move pflag to new block
-            NewBlock._PFlag = block._PFlag
-            block._PFlag = None
-            
-            InsertBlock[block] = NewBlock
-            BlockByAddr[NewBlock.addr_content] = NewBlock
-            
-            # Keep predecessor to first block, move sucessors to new block
-            NewBlock._succs = block._succs
-            block._succs = []
-            for succ in NewBlock._succs:
-                succ._preds.remove(block)
-                succ.AddPred(NewBlock)
-            
-            NewBlock.AddPred(block)
-            block.AddSucc(NewBlock)
-            
-            block.AddSucc(NextBlock[block])
-            NextBlock[block].AddPred(block)
-            
-            # Update pbra instruction to point to the two blocks
-            TrueBrBlock = NewBlock
-            FalseBrBlock = NextBlock[block]
-            pbraInst._operands.append(Operand.fromImmediate(TrueBrBlock.addr_content, int(TrueBrBlock.addr_content, 16)))
-            pbraInst._operands.append(Operand.fromImmediate(FalseBrBlock.addr_content, int(FalseBrBlock.addr_content, 16)))
-            
-        OldBlocks = Blocks.copy()
-        Blocks = []
-        for block in OldBlocks:
-            Blocks.append(block)
-            if block in InsertBlock:
-                Blocks.append(InsertBlock[block])
 
+        insert_block = {}
+        for block in predicated_blocks:
+            pbra_inst = block.instructions[0]
+            new_block_insts = block.instructions[1:]
+            new_block = BasicBlock(new_block_insts[0].id, None, new_block_insts)
+            block.instructions = [pbra_inst]
 
+            new_block.pflag = block.pflag
+            block.pflag = None
+
+            insert_block[block] = new_block
+            block_by_addr[new_block.addr_content] = new_block
+
+            new_block.succs = block.succs
+            block.succs = []
+            for succ in new_block.succs:
+                succ.preds.remove(block)
+                succ.add_pred(new_block)
+
+            new_block.add_pred(block)
+            block.add_succ(new_block)
+
+            block.add_succ(next_block[block])
+            next_block[block].add_pred(block)
+
+            true_br_block = new_block
+            false_br_block = next_block[block]
+            pbra_inst.operands.append(
+                Operand.from_immediate(
+                    true_br_block.addr_content, int(true_br_block.addr_content, 16)
+                )
+            )
+            pbra_inst.operands.append(
+                Operand.from_immediate(
+                    false_br_block.addr_content, int(false_br_block.addr_content, 16)
+                )
+            )
+
+        old_blocks = blocks.copy()
+        blocks = []
+        for block in old_blocks:
+            blocks.append(block)
+            if block in insert_block:
+                blocks.append(insert_block[block])
+                
         # print("Predicate converted CFG:")
         # for block in Blocks:
         #     print(f"  Block: {block.addr_content}", end="")
         #     print(f" from: [", end="")
-        #     for pred in block._preds:
+        #     for pred in block.preds:
         #         print(f"{pred.addr_content},", end="")
         #     print(f"]", end="")
         #     print(f" to: [", end="")
-        #     for succ in block._succs:
+        #     for succ in block.succs:
         #         print(f"{succ.addr_content},", end="")
         #     print(f"]")
         #     for inst in block.instructions:
         #         print(f"    {inst.id}    {inst}")
 
-        # Set parent for each instruction
-        for block in Blocks:
+        for block in blocks:
             for inst in block.instructions:
-                inst._Parent = block
-                
-        # # No need to process single basic block case
-        # if len(Blocks) == 1:
-        #     return Blocks
+                inst.parent = block
 
-        # for BB in Blocks:
-        #     BB.EraseRedundency() # Remove NOP and dead instructions after exit(spin-loop senteniel)
-        #     if BB.Isolated():
-        #         Blocks.remove(BB)
-            
-        return Blocks
-    
-    # Check if the target address is legal, then add the target address associated with its jump source
-    def CheckAndAddTarget(self, CurrBB, TargetAddr, JumpTargets):
-        if TargetAddr > 0:
-            if TargetAddr not in JumpTargets:
-                JumpTargets[TargetAddr] = []
-            JumpTargets[TargetAddr].append(CurrBB)
+        return blocks
+
+    def check_and_add_target(self, curr_bb, target_addr, jump_targets):
+        if target_addr > 0:
+            if target_addr not in jump_targets:
+                jump_targets[target_addr] = []
+            jump_targets[target_addr].append(curr_bb)

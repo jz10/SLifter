@@ -12,15 +12,15 @@ class IntToPtr(SaSSTransform):
             for block in func.blocks:
                 new_insts = []
                 for inst in block.instructions:
-                    if inst.IsGlobalLoad() or inst.IsGlobalStore():
-                        ptr_idx = inst.useOpStartIdx
+                    if inst.is_global_load() or inst.is_global_store():
+                        ptr_idx = inst.use_op_start_idx
 
-                        src_op = inst.GetUses()[0].Clone()
+                        src_op = inst.get_uses()[0].clone()
 
-                        new_reg = src_op.Reg + "_to_ptr"
+                        new_reg = src_op.reg + "_to_ptr"
                         new_regs_count[new_reg] = new_regs_count.get(new_reg, 0) + 1
                         new_reg = f"{new_reg}_{new_regs_count[new_reg]}"
-                        dst_op = Operand.fromReg(new_reg, new_reg)
+                        dst_op = Operand.from_reg(new_reg, new_reg)
 
                         cast_inst = Instruction(
                             id=f"{inst.id}_inttoptr",
@@ -31,7 +31,7 @@ class IntToPtr(SaSSTransform):
                         new_insts.append(cast_inst)
                         count += 1
 
-                        inst.GetUses()[0].SetReg(new_reg)
+                        inst.get_uses()[0].set_reg(new_reg)
                         
                     new_insts.append(inst)
                 block.instructions = new_insts

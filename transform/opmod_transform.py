@@ -19,21 +19,21 @@ class OpModTransform(SaSSTransform):
                     # Scan all operands; 
                     for op in inst.operands:
                         # Handle any memory operand with .X4 suffix
-                        if op.IsMemAddr and op.Suffix == "X4":
+                        if op.is_mem_addr and op.suffix == "X4":
                             # Create SHL tmp, base, 0x2
-                            base_reg = op.Reg  # underlying register name (e.g., R7)
+                            base_reg = op.reg  # underlying register name (e.g., R7)
 
                             # Source operand (as a plain register, not a memory address)
-                            src_op = Operand.fromReg(base_reg, base_reg)
+                            src_op = Operand.from_reg(base_reg, base_reg)
 
                             # Unique destination register name
                             base_dst = f"{base_reg}_x4"
                             new_regs_count[base_dst] = new_regs_count.get(base_dst, 0) + 1
                             dst_name = f"{base_dst}_{new_regs_count[base_dst]}"
-                            dst_op = Operand.fromReg(dst_name, dst_name)
+                            dst_op = Operand.from_reg(dst_name, dst_name)
 
                             # Immediate 2 (shift by 2 == multiply by 4)
-                            imm_op = Operand.fromImmediate("0x2", 2)
+                            imm_op = Operand.from_immediate("0x2", 2)
 
                             shl_inst = Instruction(
                                 id=f"{inst.id}_x4",
@@ -48,8 +48,8 @@ class OpModTransform(SaSSTransform):
                             total_inserted += 1
 
                             # Rewrite memory operand to use the new register (and drop suffix)
-                            op.SetReg(dst_name)
-                            op.Suffix = None
+                            op.set_reg(dst_name)
+                            op.suffix = None
 
                     new_insts.append(inst)
 

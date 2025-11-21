@@ -11,11 +11,11 @@ class DominatorTree:
         self._dfs_order = []
         self._dfs_index = {}
 
-        self.computeDominators()
-        self.buildTree()
-        self.computeDominanceFrontiers()
+        self.compute_dominators()
+        self.build_tree()
+        self.compute_dominance_frontiers()
 
-    def computeDominators(self):
+    def compute_dominators(self):
         visited = set()
         order = []
 
@@ -23,7 +23,7 @@ class DominatorTree:
             if b in visited:
                 return
             visited.add(b)
-            for s in b._succs:
+            for s in b.succs:
                 dfs(s)
             order.append(b)
 
@@ -49,7 +49,7 @@ class DominatorTree:
             for b in rpo:
                 if b is self.entry:
                     continue
-                preds = [p for p in b._preds if p in self._dfs_index and p in self.idom]
+                preds = [p for p in b.preds if p in self._dfs_index and p in self.idom]
                 if not preds:
                     continue
                 new_idom = None
@@ -60,7 +60,7 @@ class DominatorTree:
                     self.idom[b] = new_idom
                     changed = True
 
-    def buildTree(self):
+    def build_tree(self):
         for block in list(self.children.keys()):
             self.children[block].clear()
         for block, idom_block in self.idom.items():
@@ -68,12 +68,12 @@ class DominatorTree:
                 continue
             self.children[idom_block].append(block)
 
-    def computeDominanceFrontiers(self):
+    def compute_dominance_frontiers(self):
         self.dominance_frontier = defaultdict(set)
         for b in self.blocks:
-            if len(b._preds) < 2:
+            if len(b.preds) < 2:
                 continue
-            for p in b._preds:
+            for p in b.preds:
                 runner = p
                 while runner is not None and runner != self.idom.get(b):
                     self.dominance_frontier[runner].add(b)
@@ -92,7 +92,6 @@ class DominatorTree:
 
         return result
 
-    def getChildren(self, block):
+    def get_children(self, block):
         return self.children[block]
-
 

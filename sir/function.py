@@ -8,64 +8,63 @@ class Function:
         self.name = name
         self.blocks = []
         self.args = []
-        self.ArgMap = {}
-        self.BlockMap = {}
+        self.arg_map = {}
+        self.block_map = {}
 
     # Resovle instructions' operands
-    def ResolveOperands(self, insts):
+    def resolve_operands(self, insts):
         self.args = []
         self.regs = []
         for inst in insts:
-            args, regs = inst.GetArgsAndRegs()
+            args, regs = inst.get_args_and_regs()
             self.args.extend(args)
             self.regs.extend(regs)
         
     # Get the arguments for current function
-    def GetArgs(self, lifter):
-        Args = []
-
-        ArgMap = {}
+    def get_args(self, lifter):
+        args = []
+        arg_map = {}
         # Collect the arguments
-        for BB in self.blocks:
-            for inst in BB.instructions:
-                for Operand in inst.operands:
-                    if Operand.IsArg:
-                        Name = Operand.GetIRName(lifter)
-                        ArgMap[Name] = Operand
+        for bb in self.blocks:
+            for inst in bb.instructions:
+                for operand in inst.operands:
+                    if operand.is_arg:
+                        name = operand.get_ir_name(lifter)
+                        arg_map[name] = operand
 
         # Sort the map
-        Args = sorted(ArgMap.values(), key=lambda x: x.ArgOffset)
+        args = sorted(arg_map.values(), key=lambda x: x.arg_offset)
 
-        return Args
+        return args
 
     # Get the registers used in this function
-    def GetRegs(self, lifter):
-        Regs = {}
-        for BB in self.blocks:
-            BB.GetRegs(Regs, lifter)
+    def get_regs(self, lifter):
+        regs = {}
+        for bb in self.blocks:
+            bb.get_regs(regs, lifter)
 
-        return Regs
+        return regs
         
     # Create control flow graph
-    def DumpCFG(self):
-        for BB in self.blocks:
+    def dump_cfg(self):
+        for bb in self.blocks:
             succs = []
-            for succ in BB.succs:
+            for succ in bb.succs:
                 succs.append(succ.addr_content)
-            print("BB: ", BB.addr_content, succs)
+            print("BB: ", bb.addr_content, succs)
 
     # Build the map between basic block and its IR version
-    def BuildBBToIRMap(self, IRFunc, BlockMap):
-        IsEntry = True
-        for BB in self.blocks:
-            if IsEntry:
-                BBName = "EntryBB_" + BB.addr_content
+    def build_bb_to_ir_map(self, ir_func, block_map):
+        is_entry = True
+        for bb in self.blocks:
+            if is_entry:
+                bb_name = "EntryBB_" + bb.addr_content
             else:
-                BBName = "BB_" + BB.addr_content
+                bb_name = "BB_" + bb.addr_content
 
             # Create the basic block
-            IRBlock = IRFunc.append_basic_block(BBName)
+            ir_block = ir_func.append_basic_block(bb_name)
             # Register IR block
-            BlockMap[BB] = IRBlock
+            block_map[bb] = ir_block
             
-            IsEntry = False
+            is_entry = False

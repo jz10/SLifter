@@ -51,24 +51,24 @@ class DCE(SaSSTransform):
         
         while queue:
             inst = queue.popleft()
-            for op, def_inst in inst.ReachingDefs.items():
+            for op, def_inst in inst.reaching_defs.items():
                 if def_inst not in live:
                     live.append(def_inst)
                     queue.append(def_inst)
 
 
-        removedInsts = set()
+        removed_insts = set()
         for block in func.blocks:
             new_instructions = []
             for inst in block.instructions:
                 if inst not in live:
-                    removedInsts.add(inst)
+                    removed_insts.add(inst)
                 else:
                     new_instructions.append(inst)
 
             # print out instructions
             for inst in block.instructions:
-                if inst not in removedInsts:
+                if inst not in removed_insts:
                     print(f"{inst}")
                 else:
                     print(f"{inst} => REMOVED")

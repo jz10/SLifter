@@ -1,4 +1,4 @@
-PatternTable = {
+PATTERN_TABLE = {
     ("PACK64",): [
         {
             "in": [
@@ -247,23 +247,22 @@ PatternTable = {
                 },
             ],
         },
-        # {
-        #     "in": [
-        #         {
-        #             "opcodes": ["SHF", "R", "S32", "HI"],
-        #             "def": ["reg1"],
-        #             "use": ["RZ", "0x1f", "reg2"],
-        #         }
-        #     ],
-        #     "defined": ["reg1:reg2"],
-        #     "out": [
-        #         {
-        #             "opcodes": ["CAST64"],
-        #             "def": ["reg1:reg2"],
-        #             "use": ["reg2"],
-        #         }
-        #     ],
-        # }
+        {
+            "in": [
+                {
+                    "opcodes": ["SHF", "R", "S32", "HI"],
+                    "def": ["reg1"],
+                    "use": ["RZ", "0x1f", "reg2"],
+                }
+            ],
+            "out": [
+                {
+                    "opcodes": ["CAST64"],
+                    "def": ["reg1:reg2"],
+                    "use": ["reg2"],
+                }
+            ],
+        }
     ],
     ("IADD3", "IADD3"): [
         { # weird pattern observed from wyllie

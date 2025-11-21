@@ -26,14 +26,14 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
         def finalize_current():
             nonlocal curr_func, insts
             if curr_func and insts:
-                while insts and insts[-1].IsNOP():
+                while insts and insts[-1].is_nop():
                     insts.pop()
                 if not insts:
                     curr_func = None
                     insts = []
                     return
                 last_inst = insts[-1]
-                if not (last_inst.IsExit() or last_inst.IsReturn() or last_inst.IsBranch()):
+                if not (last_inst.is_exit() or last_inst.is_return() or last_inst.is_branch()):
                     new_id = f"{int(last_inst.id, 16) + 1:04x}"
                     insts.append(Instruction(new_id, ["EXIT"], [], None, None))
                 curr_func.blocks = self._create_cfg(insts)
@@ -82,14 +82,14 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
             if body.endswith(";"):
                 body = body[:-1].rstrip()
 
-            opcode, pflag, rest = self.GetInstOpcode(body)
+            opcode, pflag, rest = self.get_inst_opcode(body)
             rest = rest.replace(" ", "")
             rest = self._normalize_const_mem_operands(rest)
             rest = self._normalize_mem_operands(rest)
-            operands = self.GetInstOperands(rest)
+            operands = self.get_inst_operands(rest)
             operands = self._strip_branch_predicate(opcode, operands)
             operands_detail = ",".join(operands)
-            inst = self.ParseInstruction(inst_id, opcode, pflag, operands, operands_detail, curr_func)
+            inst = self.parse_instruction(inst_id, opcode, pflag, operands, operands_detail, curr_func)
 
             insts.append(inst)
 
@@ -146,23 +146,23 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
             return addr
 
         for inst in insts:
-            if inst.IsBranch():
-                target_addr = _align_up_to_inst(inst.operands[-1].Name.zfill(4))
-                inst.operands[0].Name = format(target_addr, '04x')
-                inst.operands[0].ImmediateValue = target_addr
+            if inst.is_branch():
+                target_addr = _align_up_to_inst(inst.operands[-1].name.zfill(4))
+                inst.operands[0].name = format(target_addr, '04x')
+                inst.operands[0].immediate_value = target_addr
 
         leaders = set()
         predicated_leaders = set()
         curr_pred = None
         for i, inst in enumerate(insts):
-            if inst.IsReturn() or inst.IsExit():
+            if inst.is_return() or inst.is_exit():
                 if i + 1 < len(insts):
                     leaders.add(insts[i + 1].id)
-            if inst.IsBranch():
-                leaders.add(inst.operands[0].Name.zfill(4))
+            if inst.is_branch():
+                leaders.add(inst.operands[0].name.zfill(4))
             if curr_pred != inst.pflag:
                 leaders.add(inst.id)
-                if inst.Predicated():
+                if inst.predicated():
                     predicated_leaders.add(inst.id)
                 curr_pred = inst.pflag
 
@@ -184,15 +184,15 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
                         pbra_inst = Instruction(
                             id=f"{int(block_insts[0].id, 16):04X}",
                             opcodes=["PBRA"],
-                            operands=[block_insts[0].pflag.Clone()],
+                            operands=[block_insts[0].pflag.clone()],
                             parentBB=None,
                             pflag=None
                         )
-                        pbra_inst._InstContent = f"PBRA {block_insts[0].pflag.Name}"
+                        pbra_inst.inst_content = f"PBRA {block_insts[0].pflag.name}"
                         block_insts.insert(0, pbra_inst)
-                        block_insts[1]._id = f"{int(block_insts[0].id, 16)+1:04X}"
+                        block_insts[1].id = f"{int(block_insts[0].id, 16)+1:04X}"
                         for pred_inst in block_insts:
-                            pred_inst._PFlag = None
+                            pred_inst.pflag = None
 
                     block = BasicBlock(block_id, pflag, block_insts)
                     blocks.append(block)
@@ -223,13 +223,13 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
                 next_block[blocks[idx]] = blocks[idx + 1]
 
         for block in blocks:
-            terminator = block.GetTerminator()
+            terminator = block.get_terminator()
 
             if not terminator:
                 successor = next_block.get(block)
                 if not successor:
                     continue
-                dest_op = Operand.fromImmediate(successor.addr_content, int(successor.addr_content, 16))
+                dest_op = Operand.from_immediate(successor.addr_content, int(successor.addr_content, 16))
                 new_inst = Instruction(
                     id=f"{int(block.instructions[-1].id, 16)+1:04X}",
                     opcodes=["BRA"],
@@ -237,14 +237,14 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
                 )
                 block.instructions.append(new_inst)
 
-                block.AddSucc(successor)
-                successor.AddPred(block)
-            elif terminator.IsBranch():
-                dest_op = terminator.GetUses()[0]
-                successor = block_by_addr[dest_op.Name]
-                block.AddSucc(successor)
-                successor.AddPred(block)
-            elif terminator.IsReturn() or terminator.IsExit():
+                block.add_succ(successor)
+                successor.add_pred(block)
+            elif terminator.is_branch():
+                dest_op = terminator.get_uses()[0]
+                successor = block_by_addr[dest_op.name]
+                block.add_succ(successor)
+                successor.add_pred(block)
+            elif terminator.is_return() or terminator.is_exit():
                 pass
             else:
                 raise Exception("Unrecognized terminator")
@@ -259,21 +259,21 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
             insert_block[block] = new_block
             block_by_addr[new_block.addr_content] = new_block
 
-            new_block._succs = block._succs
-            block._succs = []
-            for succ in new_block._succs:
-                succ._preds.remove(block)
-                succ.AddPred(new_block)
+            new_block.succs = block.succs
+            block.succs = []
+            for succ in new_block.succs:
+                succ.preds.remove(block)
+                succ.add_pred(new_block)
 
-            new_block.AddPred(block)
-            block.AddSucc(new_block)
+            new_block.add_pred(block)
+            block.add_succ(new_block)
 
             false_block = next_block.get(block)
             if false_block:
-                block.AddSucc(false_block)
-                false_block.AddPred(block)
-                pbra_inst._operands.append(Operand.fromImmediate(new_block.addr_content, int(new_block.addr_content, 16)))
-                pbra_inst._operands.append(Operand.fromImmediate(false_block.addr_content, int(false_block.addr_content, 16)))
+                block.add_succ(false_block)
+                false_block.add_pred(block)
+                pbra_inst.operands.append(Operand.from_immediate(new_block.addr_content, int(new_block.addr_content, 16)))
+                pbra_inst.operands.append(Operand.from_immediate(false_block.addr_content, int(false_block.addr_content, 16)))
 
         final_blocks = []
         for block in blocks:
@@ -283,7 +283,7 @@ class SaSSParser_NVBit_SM75(SaSSParserBase):
 
         for block in final_blocks:
             for inst in block.instructions:
-                inst._Parent = block
+                inst.parent = block
 
         return final_blocks
 

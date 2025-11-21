@@ -51,18 +51,18 @@ def process(instructions, sr_to_offset):
     # Replace special register operands with memory addresses
     for inst in instructions:
         if inst.opcodes and inst.opcodes[0] == 'S2R':
-            if inst.operands[1].Name not in sr_to_offset:
-                print(f"Warning: Unknown special register {inst.operands[1].Name}")
+            if inst.operands[1].name not in sr_to_offset:
+                print(f"Warning: Unknown special register {inst.operands[1].name}")
                 offset = 0x08 
             else:
-                offset = sr_to_offset[inst.operands[1].Name]
+                offset = sr_to_offset[inst.operands[1].name]
 
             inst.opcodes[0] = 'MOV'
-            new_operand = Operand.fromArg(
+            new_operand = Operand.from_arg(
                 name=f"c[0x0][{hex(offset)}]",
                 arg_offset=offset,
             )
-            inst._operands[1] = new_operand
+            inst.operands[1] = new_operand
             count += 1
 
     return count

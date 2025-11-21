@@ -21,7 +21,7 @@ class FPHack(SaSSTransform):
     # This hack produces a magic number for fast integer division
     
     # to make type system working, insert BITCAST before and after IADD32I
-    def handlePattern1(self, inst, insertInsts, removeInsts):
+    def handle_pattern1(self, inst, insert_insts, remove_insts):
         if inst.opcodes[0] != "I2F":
             return 0
         
@@ -30,83 +30,83 @@ class FPHack(SaSSTransform):
         inst3 = None
         inst4 = None
 
-        for users in inst.Users.values():
-            for useInst, useOp in users:
-                if useInst.opcodes[0] == "MUFU":
-                    inst2 = useInst
+        for users in inst.users.values():
+            for use_inst, use_op in users:
+                if use_inst.opcodes[0] == "MUFU":
+                    inst2 = use_inst
 
         if not inst2:
             return 0
         
-        for users in inst2.Users.values():
-            for useInst, useOp in users:
-                if useInst.opcodes[0] == "IADD32I" or useInst.opcodes[0] == "IADD3":
-                    inst3 = useInst
-                    iaddUseOp = useOp
+        for users in inst2.users.values():
+            for use_inst, use_op in users:
+                if use_inst.opcodes[0] == "IADD32I" or use_inst.opcodes[0] == "IADD3":
+                    inst3 = use_inst
+                    iadd_use_op = use_op
 
         if not inst3:
             return 0
         
-        for users in inst3.Users.values():
-            for useInst, useOp in users:
-                if useInst.opcodes[0] == "F2I":
-                    inst4 = useInst
-                    f2iUseOp = useOp
+        for users in inst3.users.values():
+            for use_inst, use_op in users:
+                if use_inst.opcodes[0] == "F2I":
+                    inst4 = use_inst
+                    f2i_use_op = use_op
 
         if not inst4:
             return 0
 
-        src_op = inst2.GetDefs()[0].Clone()
-        dest_op_name = src_op.Name + "_cast"    
-        dest_op = Operand.fromReg(dest_op_name, dest_op_name)
-        iaddUseOp.SetReg(dest_op_name)
+        src_op = inst2.get_defs()[0].clone()
+        dest_op_name = src_op.name + "_cast"    
+        dest_op = Operand.from_reg(dest_op_name, dest_op_name)
+        iadd_use_op.set_reg(dest_op_name)
 
-        for users in inst2.Users.values():
-            for useInst, useOp in users:
-                useOp.SetReg(dest_op_name)
+        for users in inst2.users.values():
+            for use_inst, use_op in users:
+                use_op.set_reg(dest_op_name)
 
-        bitcastInstBefore = Instruction(
+        bitcast_inst_before = Instruction(
             id=f"{inst2.id}_bitcast_before",
             opcodes=["BITCAST"],
             operands=[dest_op, src_op],
             parentBB=inst2.parent
         )
-        insertInsts[inst2] = bitcastInstBefore
+        insert_insts[inst2] = bitcast_inst_before
         
-        src_op = inst3.GetDefs()[0].Clone()
-        dest_op_name = src_op.Name + "_cast"    
-        dest_op = Operand.fromReg(dest_op_name, dest_op_name)
-        f2iUseOp.SetReg(dest_op_name)
+        src_op = inst3.get_defs()[0].clone()
+        dest_op_name = src_op.name + "_cast"    
+        dest_op = Operand.from_reg(dest_op_name, dest_op_name)
+        f2i_use_op.set_reg(dest_op_name)
 
-        bitcastInstAfter = Instruction(
+        bitcast_inst_after = Instruction(
             id=f"{inst3.id}_bitcast_after",
             opcodes=["BITCAST"],
             operands=[dest_op, src_op],
             parentBB=inst3.parent
         )
-        insertInsts[inst3] = bitcastInstAfter
+        insert_insts[inst3] = bitcast_inst_after
 
         return 1
 
 
     def process(self, func):
 
-        insertInsts = {}
-        removeInsts = set()
+        insert_insts = {}
+        remove_insts = set()
 
         count = 0
 
         for block in func.blocks:
             for inst in block.instructions:
-                count += self.handlePattern1(inst, insertInsts, removeInsts)
+                count += self.handle_pattern1(inst, insert_insts, remove_insts)
 
         for block in func.blocks:
             new_instructions = []
             for inst in block.instructions:
-                if inst not in removeInsts:
+                if inst not in remove_insts:
                     new_instructions.append(inst)
-                if inst in insertInsts:
-                    new_instructions.append(insertInsts[inst])
+                if inst in insert_insts:
+                    new_instructions.append(insert_insts[inst])
 
             block.instructions = new_instructions
         

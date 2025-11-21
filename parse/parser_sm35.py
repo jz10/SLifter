@@ -13,29 +13,29 @@ class SaSSParser_SM35(SaSSParserBase):
         self.CtlCodes = []
 
     # Parse the function body from file lines
-    def ParseFuncBody(self, line, Insts, CurrFunc):
+    def parse_func_body(self, line, Insts, CurrFunc):
         # Process function body 
         items = line.split('*/')
         if len(items) == 2:
             # Parse the control code
-            self.ParseControlCode(items[0], self.CtlCodes)
+            self.parse_control_code(items[0], self.CtlCodes)
         elif len(items) == 3:    
             # Retrieve instruction ID
-            inst_id = self.GetInstNum(items[0])
+            inst_id = self.get_inst_num(items[0])
             # Retrieve instruction opcode
-            inst_opcode, pflag, rest_content = self.GetInstOpcode(items[1])
+            inst_opcode, pflag, rest_content = self.get_inst_opcode(items[1])
             rest_content = rest_content.replace(" ", "")
 
             # Retrieve instruction operands
-            inst_ops = self.GetInstOperands(rest_content)
+            inst_ops = self.get_inst_operands(rest_content)
             
             # Create instruction
-            inst = self.ParseInstruction(inst_id, inst_opcode, pflag, inst_ops, rest_content, CurrFunc)
+            inst = self.parse_instruction(inst_id, inst_opcode, pflag, inst_ops, rest_content, CurrFunc)
 
             # Add control code
             if len(self.CtlCodes) > 0:
                 CtlCode = self.CtlCodes[0]
-                inst.SetCtlCode(CtlCode)
+                inst.set_ctl_code(CtlCode)
                 # Remove the control code from temprory storage
                 self.CtlCodes.remove(CtlCode)
             #else:
@@ -45,7 +45,7 @@ class SaSSParser_SM35(SaSSParserBase):
             Insts.append(inst)
 
     # Parse control code 
-    def ParseControlCode(self, Content, ControlCodes):
+    def parse_control_code(self, Content, ControlCodes):
         Content = Content.replace("/*", "")
         Content = Content.replace(" ", "")
 

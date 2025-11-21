@@ -2,8 +2,6 @@ from transform.transform import SaSSTransform
 
 
 class CGPatterns(SaSSTransform):
-    """Collect statistics about warp-level cooperative group primitives."""
-
     TARGET_OPS = ("WARPSYNC", "VOTE", "VOTEU")
 
     def __init__(self):

@@ -24,8 +24,8 @@ class Transforms:
         for func in module.functions:
             print(f"Function: {func.name}")
             for block in func.blocks:
-                preds = ",".join(bb.addr_content for bb in block._preds)
-                succs = ",".join(bb.addr_content for bb in block._succs)
+                preds = ",".join(bb.addr_content for bb in block.preds)
+                succs = ",".join(bb.addr_content for bb in block.succs)
                 print(f"  Block: {block.addr_content} from: [{preds}] to: [{succs}]")
                 for inst in block.instructions:
                     print(f"    {inst.id}    {inst}")

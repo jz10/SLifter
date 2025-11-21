@@ -9,64 +9,64 @@ class DefUseAnalysis(SaSSTransform):
         print("=== Start of DefUseAnalysis ===")
         
         for func in module.functions:
-            self.BuildDefUse(func.blocks)
+            self.build_def_use(func.blocks)
 
         print("=== End of DefUseAnalysis ===")
     
-    def BuildDefUse(self, blocks):
+    def build_def_use(self, blocks):
         # Clear previous results
         for block in blocks:
             for inst in block.instructions:
-                inst.ReachingDefs = {}
+                inst.reaching_defs = {}
                 inst.ReachingDefsSet = {}
-                inst.Users = {}
+                inst.users = {}
                 for op in inst.operands:
-                    op.DefiningInsts = set()
+                    op.defining_insts = set()
 
 
         # Build the def-use chains
-        InDefs = {BB : {} for BB in blocks}
-        Queue = deque(blocks)
+        in_defs = {bb: {} for bb in blocks}
+        queue = deque(blocks)
 
-        while Queue:
-            BB = Queue.popleft()
+        while queue:
+            bb = queue.popleft()
 
-            CurrDefs = {r : set(defs) for r, defs in InDefs[BB].items()}
+            curr_defs = {reg: set(defs) for reg, defs in in_defs[bb].items()}
 
-            BB.InDefs = {r : set(defs) for r, defs in CurrDefs.items()}
-            BB.GenDefs = {}
+            bb.InDefs = {reg: set(defs) for reg, defs in curr_defs.items()}
+            bb.GenDefs = {}
 
-            for Inst in BB.instructions:
+            for inst in bb.instructions:
 
-                for UseOp in Inst.GetUsesWithPredicate():
-                    if not UseOp.Reg:
+                for use_op in inst.get_uses_with_predicate():
+                    if not use_op.reg:
                         continue
 
                     # Each entry in CurrDefs is (DefInst, DefOp)
-                    for DefInst, DefOp in CurrDefs.get(UseOp.Reg, set()):
-                        DefInst.Users.setdefault(DefOp, set()).add((Inst, UseOp))
-                        UseOp.DefiningInsts.add(DefInst)
-                        Inst.ReachingDefs[UseOp] = DefInst
-                        Inst.ReachingDefsSet.setdefault(UseOp, set()).add((DefInst, DefOp))
+                    for def_inst, def_op in curr_defs.get(use_op.reg, set()):
+                        def_inst.users.setdefault(def_op, set()).add((inst, use_op))
+                        use_op.defining_insts.add(def_inst)
+                        inst.reaching_defs[use_op] = def_inst
+                        inst.ReachingDefsSet.setdefault(use_op, set()).add((def_inst, def_op))
 
-                DefOps = Inst.GetDefs()
-                for DefOp in DefOps:
-                    if DefOp and DefOp.Reg:
-                        if not DefOp.IsWritableReg:
+                def_ops = inst.get_defs()
+                for def_op in def_ops:
+                    if def_op and def_op.reg:
+                        if not def_op.is_writable_reg:
                             continue
                         # Track which specific def operand defined the register
-                        CurrDefs[DefOp.Reg] = {(Inst, DefOp)}
-                        BB.GenDefs[Inst] = DefOp
+                        curr_defs[def_op.reg] = {(inst, def_op)}
+                        bb.GenDefs[inst] = def_op
 
-            BB.OutDefs = {r : set(defs) for r, defs in CurrDefs.items()}
+            bb.OutDefs = {reg: set(defs) for reg, defs in curr_defs.items()}
 
-            for SuccBB in BB._succs:
-                Changed = False
-                for r, defs in CurrDefs.items():
-                    succ_defs = InDefs[SuccBB].get(r, set())
+            for succ_bb in bb.succs:
+                changed = False
+                for reg, defs in curr_defs.items():
+                    succ_defs = in_defs[succ_bb].get(reg, set())
                     if not defs.issubset(succ_defs):
-                        InDefs[SuccBB][r] = succ_defs | defs
-                        Changed = True
+                        in_defs[succ_bb][reg] = succ_defs | defs
+                        changed = True
 
-                if Changed:
-                    Queue.append(SuccBB)
+                if changed:
+                    queue.append(succ_bb)

@@ -7,7 +7,7 @@ class Module :
         self.isa = getattr(parser, 'isa', None)
 
         # Parse the module
-        self.ParseModule(parser)
+        self.parse_module(parser)
 
-    def ParseModule(self, parser):
+    def parse_module(self, parser):
         self.functions = parser.apply()
