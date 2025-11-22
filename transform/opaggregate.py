@@ -331,24 +331,28 @@ class OperAggregate(SaSSTransform):
                 
             return True
         
-        def update_def_to_known_reg_pairs(pattern_operands, variables):
-            if len(pattern_operands) == 1 and "[*]" in pattern_operands[0]:
-                operands_length = variables["pack_length"]
-                pattern_operands = [pattern_operands[0].replace("[*]", str(i)) for i in range(operands_length)]
+        def update_known_reg_pairs(out_inst_pattern, variables):
+            for key, pattern_operands in out_inst_pattern.items():
+                if key != "def" and key != "use":
+                    continue
+                
+                if len(pattern_operands) == 1 and "[*]" in pattern_operands[0]:
+                    operands_length = variables["pack_length"]
+                    pattern_operands = [pattern_operands[0].replace("[*]", str(i)) for i in range(operands_length)]
 
-            for pattern_operand in pattern_operands:
-                p = pattern_operand.split(":")
-                for i in range(len(p)):
-                    if is_variable(p[i]):
-                        var = variables[p[i]]
-                    else:
-                        var = p[i]
-                    p[i] = var
+                for pattern_operand in pattern_operands:
+                    p = pattern_operand.split(":")
+                    for i in range(len(p)):
+                        if is_variable(p[i]):
+                            var = variables[p[i]]
+                        else:
+                            var = p[i]
+                        p[i] = var
 
-                if len(p) == 2:
-                    print(f"\tKnown reg pair: ({p[0]}, {p[1]})")
-                    self.known_reg_pairs[p[0]] = (p[0], p[1])
-                    self.known_reg_pairs[p[1]] = (p[0], p[1])
+                    if len(p) == 2:
+                        print(f"\tKnown reg pair: ({p[0]}, {p[1]})")
+                        self.known_reg_pairs[p[0]] = (p[0], p[1])
+                        self.known_reg_pairs[p[1]] = (p[0], p[1])
                         
         def gen_opcodes(pattern_array, variables):
             opcodes = []
@@ -474,8 +478,7 @@ class OperAggregate(SaSSTransform):
             out_insts = []
             for out_inst_pattern in out_insts_pattern:
                 
-                # Add its defining reg pairs to known reg pairs
-                update_def_to_known_reg_pairs(out_inst_pattern["def"], variables)
+                update_known_reg_pairs(out_inst_pattern, variables)
                 
                 reg_pairs = gen_next_array(pattern.get("next", []), variables)
 

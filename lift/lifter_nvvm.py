@@ -187,7 +187,16 @@ class NVVMLifter(Lifter):
         raise UnsupportedInstructionException(f"Unknown intrinsic {name}")
 
     def _lift_function(self, func, llvm_module):
-        args = [arg for arg in func.get_args(self) if arg.is_arg]
+        args = [arg for arg in func.get_args(self)]
+        
+        
+        if self.arg_offsets:
+            new_args = []
+            for offset in self.arg_offsets[func.name]:
+                for arg in args:
+                    if arg.offset == offset:
+                        new_args.append(arg)
+            args = new_args
 
         param_types = [self.get_ir_type(arg.type_desc) for arg in args]
         func_ty = self.ir.FunctionType(self.ir.VoidType(), param_types, False)
@@ -278,6 +287,25 @@ class NVVMLifter(Lifter):
             if op.is_reg:
                 irName = op.get_ir_name(self)
                 val = IRRegs[irName]
+                
+                # cast if type mismatch
+                if val.type != op.get_ir_type(self):
+                    # determine cast type
+                    target_ty = op.get_ir_type(self)
+                    if "i" in target_ty.intrinsic_name and "i" in val.type.intrinsic_name:
+                        if val.type.width < target_ty.width:
+                            val = IRBuilder.zext(val, target_ty, f"{name}_zext" if name else "reg_zext")
+                        elif val.type.width > target_ty.width:
+                            val = IRBuilder.trunc(val, target_ty, f"{name}_trunc" if name else "reg_trunc")
+                            
+                    elif "f" in target_ty.intrinsic_name and "f" in val.type.intrinsic_name:
+                        if val.type.width < target_ty.width:
+                            val = IRBuilder.fpext(val, target_ty, f"{name}_fpext" if name else "reg_fpext")
+                        elif val.type.width > target_ty.width:
+                            val = IRBuilder.fptrunc(val, target_ty, f"{name}_fptrunc" if name else "reg_fptrunc")
+                            
+                    else:
+                        val = IRBuilder.bitcast(val, target_ty, f"{name}_bitcast" if name else "reg_bitcast")
                     
                 if op.is_negative_reg:
                     if op.get_type_desc().startswith('F'):
@@ -293,6 +321,15 @@ class NVVMLifter(Lifter):
                     else:
                         abs_fn = self.get_intrinsic("abs")
                         val = IRBuilder.call(abs_fn, [val], f"{name}_abs")
+                
+                # [R20+0x4]
+                if op.is_mem_addr and op.offset:
+                    val = IRBuilder.add(
+                        val,
+                        self.ir.Constant(val.type, op.offset),
+                        f"{name}_memaddr_offset_add"
+                    )
+                    
                 return val
             if op.is_arg:
                 return ConstMem[op.get_ir_name(self)]
@@ -300,22 +337,11 @@ class NVVMLifter(Lifter):
                 return self.ir.Constant(op.get_ir_type(self), op.immediate_value)
             if op.is_const_mem and not op.is_arg:
                 bank = op.const_mem_bank
-                offset = op.offsetOrImm
-                zero = self.ir.Constant(self.ir.IntType(32), 0)
-                bank_idx = self.ir.Constant(self.ir.IntType(32), bank)
-                offset_idx = self.ir.Constant(self.ir.IntType(32), int(offset))
-                ptr = IRBuilder.gep(
-                    self.ConstMem,
-                    [zero, bank_idx, offset_idx],
-                    f"{name}_cmem_gep" if name else "const_mem_gep",
-                )
-                typed_ptr = IRBuilder.bitcast(
-                    ptr,
-                    self.ir.PointerType(op.get_ir_type(self), 4),
-                    f"{name}_cmem_ptr" if name else "const_mem_ptr",
-                )
-                load_name = f"{name}_cmem_load" if name else "const_mem_load"
-                return IRBuilder.load(typed_ptr, load_name)
+                curr_cm_map = self.cm_map[self.curr_function.name]
+                offset = int(op.offset_value / 8)
+                if op.offset_value % 8 != 0:
+                    raise UnsupportedInstructionException(f"how?")
+                return self.ir.Constant(op.get_ir_type(self), curr_cm_map[bank][offset])
             if op.is_mem_addr and not op.is_reg: # E.g. LDS.U R2 = [0xc]
                 return self.ir.Constant(op.get_ir_type(self), op.immediate_value)
             raise UnsupportedInstructionException(f"Unsupported operand type: {op}")
@@ -383,7 +409,7 @@ class NVVMLifter(Lifter):
             print(f"S2R: Unknown special register {valop.name}")
             val = self.ir.Constant(self.ir.IntType(32), 0)
 
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("LDG", "LDG64")
@@ -399,7 +425,7 @@ class NVVMLifter(Lifter):
             addrspace=1,
         )
         val = IRBuilder.load(addr_ptr, "ldg", typ=pointee_ty)
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("STG")
@@ -430,7 +456,7 @@ class NVVMLifter(Lifter):
                 "lds_shared_addr_cast",
             )
         val = IRBuilder.load(addr, "lds", typ=dest.get_ir_type(self))
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("STS")
@@ -456,7 +482,7 @@ class NVVMLifter(Lifter):
         addr = _get_val(ptr, "ldl_addr")
         addr = IRBuilder.gep(self.LocalMem, [self.ir.Constant(self.ir.IntType(32), 0), addr], "ldl_local_addr")
         val = IRBuilder.load(addr, "ldl", typ=dest.get_ir_type(self))
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("STL")
@@ -504,7 +530,7 @@ class NVVMLifter(Lifter):
             intrinsic_name, ret_ty=self.ir.FloatType(), arg_tys=[self.ir.FloatType()]
         )
         res = IRBuilder.call(intrinsic, [v], f"mufu_{func.lower()}")
-        IRRegs[dest.get_ir_name(self)] = res
+        self._set_val(IRBuilder, IRRegs, dest, res)
     @lift_for("CS2R")
     def lift_cs2r(self, Inst, IRBuilder, IRRegs, ConstMem, block_map, _get_val=None, _as_pointer=None):
         # CS2R (Convert Special Register to Register)
@@ -631,7 +657,7 @@ class NVVMLifter(Lifter):
             else:
                 vote_val = IRBuilder.bitcast(vote_val, dest_ty, f"vote_{mode.lower()}_cast")
 
-        IRRegs[dest.get_ir_name(self)] = vote_val
+        self._set_val(IRBuilder, IRRegs, dest, vote_val)
 
 
     @lift_for("SHFL")
@@ -676,9 +702,9 @@ class NVVMLifter(Lifter):
             shfl_name,
         )
 
-        IRRegs[destReg.get_ir_name(self)] = shflVal
+        self._set_val(IRBuilder, IRRegs, destReg, shflVal)
         if not destPred.is_pt:
-            IRRegs[destPred.get_ir_name(self)] = self.ir.Constant(self.ir.IntType(1), 1)
+            self._set_val(IRBuilder, IRRegs, destPred, self.ir.Constant(self.ir.IntType(1), 1))
 
 
     @lift_for("MATCH")
@@ -724,7 +750,7 @@ class NVVMLifter(Lifter):
         if dest.get_ir_type(self) != matchVal.type:
             matchVal = IRBuilder.zext(matchVal, dest.get_ir_type(self), "match_any_ext")
 
-        IRRegs[dest.get_ir_name(self)] = matchVal
+        self._set_val(IRBuilder, IRRegs, dest, matchVal)
 
 
     @lift_for("BREV", "UBREV")
@@ -755,7 +781,7 @@ class NVVMLifter(Lifter):
             elif dest_ty.width > revVal.type.width:
                 revVal = IRBuilder.zext(revVal, dest_ty, "brev_zext")
 
-        IRRegs[dest.get_ir_name(self)] = revVal
+        self._set_val(IRBuilder, IRRegs, dest, revVal)
 
 
     @lift_for("FLO", "UFLO")
@@ -791,7 +817,7 @@ class NVVMLifter(Lifter):
             [val, ir.Constant(ir.IntType(1), 0)],
             "flo",
         )
-        IRRegs[dest.get_ir_name(self)] = floVal
+        self._set_val(IRBuilder, IRRegs, dest, floVal)
 
 
     @lift_for("ATOM")
@@ -841,13 +867,13 @@ class NVVMLifter(Lifter):
                     final_val = IRBuilder.bitcast(result, dest_ty, "atom_result_bitcast")
                 else:
                     raise UnsupportedInstructionException("ATOM destination type mismatch")
-            IRRegs[dest_reg.get_ir_name(self)] = final_val
+            self._set_val(IRBuilder, IRRegs, dest_reg, final_val)
 
         defs = Inst.get_defs()
         if defs:
             pred = defs[0]
             if pred.is_predicate_reg:
-                IRRegs[pred.get_ir_name(self)] = self.ir.Constant(self.ir.IntType(1), 1)
+                self._set_val(IRBuilder, IRRegs, pred, self.ir.Constant(self.ir.IntType(1), 1))
 
 
     @lift_for("ATOMS", "ATOMG")
@@ -873,7 +899,7 @@ class NVVMLifter(Lifter):
 
         prmt_intr = self.get_intrinsic("llvm.nvvm.prmt")
         prmtVal = IRBuilder.call(prmt_intr, [v1, v2, imm8], "prmt")
-        IRRegs[dest.get_ir_name(self)] = prmtVal
+        self._set_val(IRBuilder, IRRegs, dest, prmtVal)
 
 
     @lift_for("QSPC")

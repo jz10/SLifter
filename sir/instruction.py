@@ -137,17 +137,6 @@ class Instruction:
         cloned_inst.inst_content = self.inst_content
         cloned_inst.ctl_code = self.ctl_code
         return cloned_inst
-    
-    def get_args_and_regs(self):
-        regs = []
-        args = []
-        for operand in self.operands:
-            if operand.is_reg:
-                regs.append(operand)
-            if operand.is_arg:
-                args.append(operand)
-
-        return args, regs
 
     def set_ctl_code(self, CtlCode):
         if self.ctl_code != None:

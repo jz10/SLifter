@@ -4,138 +4,202 @@ set -euo pipefail
 # ============================================================================
 # SLifter Unified Test Runner
 # ============================================================================
-#
-# Example: SM=75 SUITE=hecbench TESTS=atomicCAS LIFTER=NVVM bash scripts/run_test.sh &>results.txt
-# Supports cuobjdump, nvbit, others, and hecbench suites in a single script.
-# Configure via environment variables (SM, SUITE, TESTS, LIFTER, etc.)
-# ============================================================================
+# Usage: SM=75 SUITE=cuobjdump TESTS=loop3 LIFTER=nvvm bash scripts/run_test.sh &>results.txt
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TEST_ROOT="${REPO_ROOT}/test"
-cd "${TEST_ROOT}"
 
-SM=${SM:-75}
-SUITE=${SUITE:-"cuobjdump"}
-LIFTER=${LIFTER:-"x86"}
-LIFTER=$(printf "%s" "${LIFTER}" | tr '[:upper:]' '[:lower:]')
-TIMEOUT_SECS=${TIMEOUT_SECS:-10}
-EXTRA_LIFTER_ARGS=("--verbose")
+# Config
+SM="${SM:-75}"
+SUITE="${SUITE:-cuobjdump}"
+LIFTER="${LIFTER:-x86}"
+TIMEOUT_SECS="${TIMEOUT_SECS:-10}"
+EXTRA_LIFTER_ARGS=("${EXTRA_LIFTER_ARGS[@]:---verbose}")
+
+LIFTER=$(echo "${LIFTER}" | tr '[:upper:]' '[:lower:]')
+
+log() { echo "[INFO] $1"; }
+error() { echo "[FAIL] $1" >&2; }
 
 if [ -z "${TESTS+x}" ]; then
-  case "${SUITE}" in
-    cuobjdump) TESTS=("loop3") ;;
-    hecbench) TESTS=("bfs") ;;
-    nvbit) TESTS=("resnet18") ;;
-    others) TESTS=("spaxy") ;;
-    *)
-      echo "error: no default tests for suite '${SUITE}'. Please set TESTS=(...)" >&2
-      exit 1
-      ;;
-  esac
+  error "No tests specified. Set 'TESTS' environment variable."
+  exit 1
 fi
 
 if ! command -v timeout >/dev/null 2>&1; then
-  echo "error: 'timeout' command not found; please install coreutils" >&2
+  error "'timeout' command missing."
   exit 1
 fi
 
 run_t() {
-  local secs="$1"
+  local duration="$1"
   shift
-  timeout --preserve-status "${secs}s" "$@"
+  timeout --preserve-status "${duration}s" "$@"
 }
 
-wrapper_include_dir=""
-cleanup_wrapper_dir() {
-  if [ -n "${wrapper_include_dir:-}" ]; then
-    rm -rf "${wrapper_include_dir}" || true
-    wrapper_include_dir=""
+WRAPPER_TMP_DIR=""
+cleanup() {
+  if [ -n "${WRAPPER_TMP_DIR}" ]; then
+    rm -rf "${WRAPPER_TMP_DIR}"
   fi
 }
-trap cleanup_wrapper_dir EXIT
+trap cleanup EXIT INT TERM
 
-for RAW_TEST in "${TESTS[@]}"; do
-  echo "[${SUITE}] Running test: ${RAW_TEST} (sm_${SM})"
-  cleanup_wrapper_dir
+# --- Compilation Logic ---
 
-  # Normalise hecbench names (strip optional -cuda suffix)
+compile_artifacts_if_needed() {
+  local src_file="${CURRENT_TEST_DIR}/${CURRENT_TEST_NAME}.cu"
+  
+  # Only compile if missing (primary use case: cuobjdump suite)
+  if [[ -f "${CURRENT_SASS_FILE}" ]] && [[ -f "${CURRENT_ELF_FILE}" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "${src_file}" ]]; then
+    error "Missing SASS/ELF and no source file found at ${src_file}"
+    return 1
+  fi
+
+  log "Compiling SASS/ELF from ${src_file}..."
+  
+  local build_tmp
+  build_tmp=$(mktemp -d)
+  local tmp_exe="${build_tmp}/temp.exe"
+
+  # Compile to temp executable
+  run_t "${TIMEOUT_SECS}" nvcc -arch="sm_${SM}" \
+    -Ddfloat=double -Ddlong=int -std=c++14 -w \
+    -I. -I"${CURRENT_TEST_DIR}" \
+    "${src_file}" -o "${tmp_exe}"
+
+  # Extract artifacts
+  run_t "${TIMEOUT_SECS}" cuobjdump --dump-sass "${tmp_exe}" > "${CURRENT_SASS_FILE}"
+  run_t "${TIMEOUT_SECS}" cuobjdump --dump-elf "${tmp_exe}" > "${CURRENT_ELF_FILE}"
+
+  rm -rf "${build_tmp}"
+}
+
+# --- Execution Stages ---
+
+resolve_paths() {
+  local raw_name="$1"
+  local test_name="${raw_name}"
+  local test_dir_rel="${SUITE}/${test_name}"
+
+  # HecBench directory normalization
   if [ "${SUITE}" = "hecbench" ]; then
-    TEST="${RAW_TEST%-cuda}"
-    while [[ "${TEST}" == *"-cuda" ]]; do
-      TEST="${TEST%-cuda}"
-    done
-    TEST_DIR="${SUITE}/${TEST}-cuda"
-  else
-    TEST="${RAW_TEST}"
-    TEST_DIR="${SUITE}/${TEST}"
+    test_name="${raw_name%-cuda}"
+    while [[ "${test_name}" == *"-cuda" ]]; do test_name="${test_name%-cuda}"; done
+    test_dir_rel="${SUITE}/${test_name}-cuda"
   fi
 
-  OUT_BASE="${TEST}_${LIFTER}_sm${SM}"
-  SASS_FILE="${TEST_DIR}/${TEST}_sm${SM}.sass"
+  CURRENT_TEST_NAME="${test_name}"
+  CURRENT_TEST_DIR="${TEST_ROOT}/${test_dir_rel}"
+  CURRENT_SASS_FILE="${CURRENT_TEST_DIR}/${test_name}_sm${SM}.sass"
+  CURRENT_ELF_FILE="${CURRENT_TEST_DIR}/${test_name}_sm${SM}.elf"
+  CURRENT_OUT_BASE="${test_name}_${LIFTER}_sm${SM}"
+  
+  if [ ! -d "${CURRENT_TEST_DIR}" ]; then
+    error "Directory not found: ${test_dir_rel}"
+    return 1
+  fi
+  return 0
+}
 
-  if [ ! -d "${TEST_DIR}" ]; then
-    echo "error: test directory '${TEST_DIR}' not found" >&2
-    continue
+stage_lift() {
+  log "Lifting SASS + ELF to LLVM IR..."
+  # Pass both SASS and ELF to -i
+  run_t "${TIMEOUT_SECS}" \
+    python "${REPO_ROOT}/main.py" \
+      -i "${CURRENT_SASS_FILE}" "${CURRENT_ELF_FILE}" \
+      -o "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}" \
+      --lifter "${LIFTER}" \
+      "${EXTRA_LIFTER_ARGS[@]}"
+}
+
+stage_run_x86() {
+  local host_src="${CURRENT_TEST_DIR}/host_cpu.cpp"
+  [ ! -f "${host_src}" ] && return 0
+
+  log "Compiling X86 Host..."
+  
+  local wrapper_src="${TEST_ROOT}/common/kernel_wrapper_${SM}.h"
+  local include_args=()
+  
+  cleanup
+  if [ -f "${wrapper_src}" ]; then
+    WRAPPER_TMP_DIR="$(mktemp -d "${TEST_ROOT}/common/wrapper.XXXXXX")"
+    cp "${wrapper_src}" "${WRAPPER_TMP_DIR}/kernel_wrapper.h"
+    include_args+=("-I${WRAPPER_TMP_DIR}")
   fi
 
-  if [ ! -f "${SASS_FILE}" ]; then
-    echo "error: expected SASS file '${SASS_FILE}' not found" >&2
-    continue
+  run_t "${TIMEOUT_SECS}" clang -O2 -target x86_64 -c \
+    "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.ll" \
+    -o "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.o"
+
+  run_t "${TIMEOUT_SECS}" clang++ -std=c++20 -O2 -D__CUDA_ARCH__="${SM}0" \
+    "${include_args[@]}" -I"${TEST_ROOT}/common" \
+    "${host_src}" \
+    "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.o" \
+    -o "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.out"
+
+  log "Running..."
+  run_t "${TIMEOUT_SECS}" "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.out"
+  
+  rm -f "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.o" 
+}
+
+stage_run_nvvm() {
+  local host_src="${CURRENT_TEST_DIR}/host_cuda.cu"
+  [ ! -f "${host_src}" ] && return 0
+
+  log "Compiling NVVM Host..."
+  local ptx="${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.ptx"
+  local img="${ptx}"
+
+  run_t "${TIMEOUT_SECS}" llc -march=nvptx64 -mcpu="sm_${SM}" -mattr="+ptx${SM}" \
+    -o "${ptx}" "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.ll"
+
+  if [ -n "${USE_PTXAS:-}" ]; then
+    local cubin="${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.cubin"
+    run_t "${TIMEOUT_SECS}" ptxas -arch="sm_${SM}" "${ptx}" -o "${cubin}"
+    img="${cubin}"
   fi
 
-  echo "Generating LLVM IR from ${SASS_FILE}..."
-  run_t "${TIMEOUT_SECS}" python ../main.py -i "${SASS_FILE}" -o "${TEST_DIR}/${OUT_BASE}" --lifter "${LIFTER}" "${EXTRA_LIFTER_ARGS[@]}"
+  run_t "${TIMEOUT_SECS}" nvcc -std=c++17 -I"${TEST_ROOT}/common" \
+    "${host_src}" -lcuda -o "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.out"
 
-  HOST_CPP="${TEST_DIR}/host_cpu.cpp"
-  HOST_CUDA="${TEST_DIR}/host_cuda.cu"
+  log "Running..."
+  run_t "${TIMEOUT_SECS}" "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.out" "${img}"
+}
 
-  if [ "${LIFTER}" = "x86" ] && [ -f "${HOST_CPP}" ]; then
-    echo "Compiling and linking host code (${HOST_CPP})..."
-    if [ -f "common/kernel_wrapper_${SM}.h" ]; then
-      wrapper_include_dir="$(mktemp -d "common/kernel_wrapper_tmp.XXXXXX")"
-      cp "common/kernel_wrapper_${SM}.h" "${wrapper_include_dir}/kernel_wrapper.h"
-    fi
-    extra_include=()
-    if [ -n "${wrapper_include_dir:-}" ]; then
-      extra_include+=("-I./${wrapper_include_dir}")
-    fi
-    run_t "${TIMEOUT_SECS}" clang -O2 -target x86_64 -c "${TEST_DIR}/${OUT_BASE}.ll" -o "${TEST_DIR}/${OUT_BASE}.o"
-    run_t "${TIMEOUT_SECS}" clang++ -std=c++20 -O2 -D__CUDA_ARCH__=${SM}0 "${extra_include[@]}" -I./common "./${HOST_CPP}" "${TEST_DIR}/${OUT_BASE}.o" -o "${TEST_DIR}/${OUT_BASE}.out"
+# --- Main ---
 
-    echo "Executing ${TEST_DIR}/${OUT_BASE}.out..."
-    run_t "${TIMEOUT_SECS}" "./${TEST_DIR}/${OUT_BASE}.out"
+cd "${TEST_ROOT}"
 
-    # rm -f "${TEST_DIR}/${OUT_BASE}.o" "${TEST_DIR}/${OUT_BASE}.out"
-    cleanup_wrapper_dir
-  elif [ "${LIFTER}" = "nvvm" ] && [ -f "${HOST_CUDA}" ]; then
-    PTX_FILE="${TEST_DIR}/${OUT_BASE}.ptx"
-    DEVICE_IMAGE="${PTX_FILE}"
+# Split TESTS string into array
+IFS=' ' read -r -a TEST_ARRAY <<< "${TESTS}"
 
-    echo "Lowering NVVM IR to PTX..."
-    run_t "${TIMEOUT_SECS}" llc -march=nvptx64 -mcpu=sm_${SM} -mattr=+ptx${SM} -o "${PTX_FILE}" "${TEST_DIR}/${OUT_BASE}.ll"
+for RAW_TEST in "${TEST_ARRAY[@]}"; do
+  echo "------------------------------------------------------------"
+  log "Test: ${SUITE}/${RAW_TEST} (SM=${SM}, Lifter=${LIFTER})"
 
-    if [ -n "${USE_PTXAS:-}" ]; then
-      CUBIN_FILE="${TEST_DIR}/${OUT_BASE}.cubin"
-      echo "Assembling PTX to cubin (USE_PTXAS set)..."
-      run_t "${TIMEOUT_SECS}" ptxas -arch=sm_${SM} "${PTX_FILE}" -o "${CUBIN_FILE}"
-      DEVICE_IMAGE="${CUBIN_FILE}"
-    fi
+  if ! resolve_paths "${RAW_TEST}"; then continue; fi
+  
+  if ! compile_artifacts_if_needed; then continue; fi
 
-    echo "Compiling CUDA host (${HOST_CUDA})..."
-    run_t "${TIMEOUT_SECS}" nvcc -std=c++17 -I./common "./${HOST_CUDA}" -lcuda -o "${TEST_DIR}/${OUT_BASE}.out"
+  stage_lift
 
-    echo "Executing ${TEST_DIR}/${OUT_BASE}.out..."
-    run_t "${TIMEOUT_SECS}" "./${TEST_DIR}/${OUT_BASE}.out" "${DEVICE_IMAGE}"
+  case "${LIFTER}" in
+    x86)  stage_run_x86 ;;
+    nvvm) stage_run_nvvm ;;
+    *)    log "Lifter '${LIFTER}' execution not supported." ;;
+  esac
 
-    # rm -f "${TEST_DIR}/${OUT_BASE}.out" "${TEST_DIR}/${OUT_BASE}.ptx" "${TEST_DIR}/${OUT_BASE}.cubin"
-  else
-    echo "Lifting-only test (no host execution)"
-  fi
+  # Cleanup run artifacts
+  rm -f "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.ll" \
+        "${CURRENT_TEST_DIR}/${CURRENT_OUT_BASE}.out"
 
-  rm -f "${TEST_DIR}/${OUT_BASE}.ll"
-
-  echo "Test ${RAW_TEST} completed successfully!"
+  echo "[PASS] ${RAW_TEST} completed."
 done
-cleanup_wrapper_dir
-trap - EXIT

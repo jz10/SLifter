@@ -79,11 +79,11 @@ int main(int argc, char** argv) {
     bool ok = true;
     const int total_threads = cfg.total_threads();
     for (int tid = 0; tid < cfg.n; ++tid) {
-        int expected = 0;
+        float expected = 0;
         for (int i = tid; i < cfg.n; i += 1)
             expected += a[i] + b[i];
 
-        double tol = 1e-3 * std::fabs(expected);
+        float tol = 1e-3 * std::fabs(expected);
         if (std::fabs(c[tid] - expected) > tol) {
             std::cerr << "Mismatch at " << tid << ": got " << c[tid]
                       << ", expected " << expected << "\n";

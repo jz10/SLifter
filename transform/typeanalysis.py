@@ -12,6 +12,7 @@ FLOAT32 = {"Float32"}
 FLOAT64 = {"Float64"}
 INT32 = {"Int32"}
 INT64 = {"Int64"}
+INT = INT32 | INT64
 NUM1 = BOOL
 NUM32 = INT32 | FLOAT32 | HALF2
 NUM64 = INT64 | FLOAT64
@@ -24,14 +25,14 @@ class TypeAnalysis(SaSSTransform):
         super().__init__()
         
         self.instruction_type_table = {
-            "S2R": [[INT32], [INT32, INT32]],
+            "S2R": [[INT], [INT, INT]],
             "IMAD": [[INT32], [INT32, INT32, INT32]],
             "IADD3": [[INT32], [INT32, INT32, INT32]],
             "XMAD": [[INT32], [INT32, INT32, INT32]],
             "IADD32I": [[INT32], [INT32, INT32]],
             "IADD": [[INT32], [INT32, INT32]],
             "ISETP": [[BOOL, BOOL], [INT32, INT32, BOOL, BOOL]],
-            "LEA": [[INT32, BOOL], [INT32, INT32, INT32]],
+            "LEA": [[INT32, BOOL], [INT32, INT32, INT32, INT32]],
             "LOP3": [[INT32, INT32], [INT32, INT32, INT32, INT32, INT32, BOOL]],
             "LDG": [[NUM32], [INT64]],
             "LD": [[NUM32], [INT64]],
@@ -191,14 +192,14 @@ class TypeAnalysis(SaSSTransform):
         
         while changed:
 
-            # for BB in WorkList:
+            # for BB in work_list:
             #     for Inst in BB.instructions:
             #         print(str(Inst)+" => ", end="")
             #         for operand in Inst.operands:
-            #             if Operand in optypes:
-            #                 TypeDesc = str(optypes[Operand])
-            #             elif Operand.reg in optypes:
-            #                 TypeDesc = str(optypes[Operand.reg])
+            #             if operand in optypes:
+            #                 TypeDesc = str(optypes[operand])
+            #             elif operand.reg in optypes:
+            #                 TypeDesc = str(optypes[operand.reg])
             #             else:
             #                 TypeDesc = "NOTYPE"
             #             print(TypeDesc+", ",end="")
@@ -207,31 +208,31 @@ class TypeAnalysis(SaSSTransform):
             # print("-----next iteration-----")
 
             changed = False
-            self.conflicts = {}
-            self.phi_conflicts = {}
+            # self.conflicts = {}
+            # self.phi_conflicts = {}
             
             for bb in work_list:
                 changed |= self.process_bb(bb, optypes)
 
-            # If there is any conflict, insert bitcast instructions
-            # After that, re-run defuse, resolve types again
-            if len(self.conflicts) > 0 or len(self.phi_conflicts) > 0:
-                for bb in work_list:
-                    new_instructions = []
-                    for inst in bb.instructions:
-                        if inst in self.conflicts:
-                            self.insert_bitcast_before(inst, bb, new_instructions, optypes)
-                        new_instructions.append(inst)
-                        if inst in self.phi_conflicts:
-                            self.insert_bitcast_after(inst, bb, new_instructions, optypes)
-                    bb.instructions = new_instructions
+            # # If there is any conflict, insert bitcast instructions
+            # # After that, re-run defuse, resolve types again
+            # if len(self.conflicts) > 0 or len(self.phi_conflicts) > 0:
+            #     for bb in work_list:
+            #         new_instructions = []
+            #         for inst in bb.instructions:
+            #             if inst in self.conflicts:
+            #                 self.insert_bitcast_before(inst, bb, new_instructions, optypes)
+            #             new_instructions.append(inst)
+            #             if inst in self.phi_conflicts:
+            #                 self.insert_bitcast_after(inst, bb, new_instructions, optypes)
+            #         bb.instructions = new_instructions
                     
-                self.defuse.build_def_use(function.blocks)
+            #     self.defuse.build_def_use(function.blocks)
                 
-                optypes = {}
-                for bb in work_list:
-                    for inst in bb.instructions:
-                        self.resolve_types(inst, optypes)
+            #     optypes = {}
+            #     for bb in work_list:
+            #         for inst in bb.instructions:
+            #             self.resolve_types(inst, optypes)
                 
                 
             iteration += 1
@@ -289,50 +290,50 @@ class TypeAnalysis(SaSSTransform):
         print("done")
         print("=== End of TypeAnalysis ===")
         
-    def insert_bitcast_before(self, inst, bb, new_instructions, optypes):
-        op, old_type, new_type = self.conflicts[inst]
-        print(f"Warning: Inserting BITCAST to resolve type conflict for {op} before {inst}: {old_type} vs {new_type}")
-        # Insert bitcast before Inst
-        src_reg = Operand.from_reg(op.reg, op.reg)
-        new_reg_name = f"{src_reg.reg}_bitcast"
-        dest_reg = Operand.from_reg(new_reg_name, new_reg_name)
+    # def insert_bitcast_before(self, inst, bb, new_instructions, optypes):
+    #     op, old_type, new_type = self.conflicts[inst]
+    #     print(f"Warning: Inserting BITCAST to resolve type conflict for {op} before {inst}: {old_type} vs {new_type}")
+    #     # Insert bitcast before Inst
+    #     src_reg = Operand.from_reg(op.reg, op.reg)
+    #     new_reg_name = f"{src_reg.reg}_bitcast"
+    #     dest_reg = Operand.from_reg(new_reg_name, new_reg_name)
 
-        bitcast_inst = Instruction(
-            id=f"{inst.id}_type_resolve", 
-            opcodes=["BITCAST"],
-            operands=[dest_reg, src_reg],
-            parentBB=bb
-        )
-        new_instructions.append(bitcast_inst)
+    #     bitcast_inst = Instruction(
+    #         id=f"{inst.id}_type_resolve", 
+    #         opcodes=["BITCAST"],
+    #         operands=[dest_reg, src_reg],
+    #         parentBB=bb
+    #     )
+    #     new_instructions.append(bitcast_inst)
 
-        # # Book-keeping for statistics
-        # self.ConflictedOriginalRegs.add(orig_reg)
-        # self.BitcastRegs.add(NewRegName)
+    #     # # Book-keeping for statistics
+    #     # self.ConflictedOriginalRegs.add(orig_reg)
+    #     # self.BitcastRegs.add(NewRegName)
 
-        optypes[dest_reg.reg] = old_type
-        optypes[src_reg.reg] = new_type
-        op.set_reg(dest_reg.reg)
+    #     optypes[dest_reg.reg] = old_type
+    #     optypes[src_reg.reg] = new_type
+    #     op.set_reg(dest_reg.reg)
         
-    def insert_bitcast_after(self, inst, bb, new_instructions, optypes):
-        op, old_type, new_type, phi_def_op = self.phi_conflicts[inst]
-        print(f"Warning: Inserting BITCAST to resolve type conflict for {op} after {inst}: {old_type} vs {new_type}")
-        # Insert bitcast before Inst
-        src_reg = Operand.from_reg(op.reg, op.reg)
-        new_reg_name = f"{src_reg.reg}_bitcast"
-        dest_reg = Operand.from_reg(new_reg_name, new_reg_name)
+    # def insert_bitcast_after(self, inst, bb, new_instructions, optypes):
+    #     op, old_type, new_type, phi_def_op = self.phi_conflicts[inst]
+    #     print(f"Warning: Inserting BITCAST to resolve type conflict for {op} after {inst}: {old_type} vs {new_type}")
+    #     # Insert bitcast before Inst
+    #     src_reg = Operand.from_reg(op.reg, op.reg)
+    #     new_reg_name = f"{src_reg.reg}_bitcast"
+    #     dest_reg = Operand.from_reg(new_reg_name, new_reg_name)
 
-        bitcast_inst = Instruction(
-            id=f"{inst.id}_type_resolve", 
-            opcodes=["BITCAST"],
-            operands=[dest_reg, src_reg],
-            parentBB=bb
-        )
-        new_instructions.append(bitcast_inst)
+    #     bitcast_inst = Instruction(
+    #         id=f"{inst.id}_type_resolve", 
+    #         opcodes=["BITCAST"],
+    #         operands=[dest_reg, src_reg],
+    #         parentBB=bb
+    #     )
+    #     new_instructions.append(bitcast_inst)
 
-        optypes[src_reg.reg] = old_type
-        optypes[dest_reg.reg] = new_type
+    #     optypes[src_reg.reg] = old_type
+    #     optypes[dest_reg.reg] = new_type
         
-        phi_def_op.set_reg(new_reg_name)
+    #     phi_def_op.set_reg(new_reg_name)
         
     def get_type_desc(self, operand, optypes):
         if operand in optypes:
@@ -423,12 +424,13 @@ class TypeAnalysis(SaSSTransform):
         if len(previous_type & type_set) == 0:
             print(f"Warning: Type mismatch for {operand.reg} in {inst}: prevType: {previous_type} vs optype: {type_set}")
             
-            if inst.opcodes[0] != "PHI":
-                self.conflicts[inst] = (operand, type_set, previous_type)
-            else:
-                # Cannot insert bitcast before phi,
-                # need to search and insert after non-phi def instructions
-                self.add_phi_conflicts(optypes, operand, type_set, previous_type, inst)
+            # if inst.opcodes[0] != "PHI":
+            #     self.conflicts[inst] = (operand, type_set, previous_type)
+            # else:
+            #     # Cannot insert bitcast before phi,
+            #     # need to search and insert after non-phi def instructions
+            #     self.add_phi_conflicts(optypes, operand, type_set, previous_type, inst)
+            optypes[operand] = type_set
             return
             
         if operand.is_writable_reg:
@@ -438,33 +440,33 @@ class TypeAnalysis(SaSSTransform):
             # E.g. 0 in IADD vs 0 in FADD have different types
             optypes[operand] = previous_type & type_set
             
-    def add_phi_conflicts(self, optypes, operand, new_type, old_type, inst):
-        queue = deque()
-        prev_queue = deque()
-        visited = set()
+    # def add_phi_conflicts(self, optypes, operand, new_type, old_type, inst):
+    #     queue = deque()
+    #     prev_queue = deque()
+    #     visited = set()
         
-        queue.extend(list(inst.ReachingDefsSet[operand]))
-        prev_queue.append(operand)
+    #     queue.extend(list(inst.ReachingDefsSet[operand]))
+    #     prev_queue.append(operand)
         
-        while queue:
-            curr_inst, curr_def_op = queue.popleft()
-            phi_use_op = prev_queue.popleft()
+    #     while queue:
+    #         curr_inst, curr_def_op = queue.popleft()
+    #         phi_use_op = prev_queue.popleft()
             
-            if curr_inst in visited:
-                continue
-            visited.add(curr_inst)
+    #         if curr_inst in visited:
+    #             continue
+    #         visited.add(curr_inst)
             
-            if curr_inst.opcodes[0] != "PHI":
-                if len(self.get_optype(optypes, curr_def_op) & new_type) == 0:
-                    self.phi_conflicts[curr_inst] = (curr_def_op, self.get_optype(optypes, curr_def_op), new_type, phi_use_op)
-                continue
+    #         if curr_inst.opcodes[0] != "PHI":
+    #             if len(self.get_optype(optypes, curr_def_op) & new_type) == 0:
+    #                 self.phi_conflicts[curr_inst] = (curr_def_op, self.get_optype(optypes, curr_def_op), new_type, phi_use_op)
+    #             continue
             
-            # Give PHI another chance to repropagate after the bitcasts are inserted
-            optypes[curr_def_op.reg] = TOP 
+    #         # Give PHI another chance to repropagate after the bitcasts are inserted
+    #         optypes[curr_def_op.reg] = TOP 
             
-            for use_op, def_inst_pair in curr_inst.ReachingDefsSet.items():
-                queue.extend(list(def_inst_pair))
-                prev_queue.append(use_op)
+    #         for use_op, def_inst_pair in curr_inst.ReachingDefsSet.items():
+    #             queue.extend(list(def_inst_pair))
+    #             prev_queue.append(use_op)
 
     def traverse_cfg(self, function):
         entry_bb = function.blocks[0]

@@ -58,7 +58,7 @@ def process(instructions, sr_to_offset):
                 offset = sr_to_offset[inst.operands[1].name]
 
             inst.opcodes[0] = 'MOV'
-            new_operand = Operand.from_arg(
+            new_operand = Operand.from_cm(
                 name=f"c[0x0][{hex(offset)}]",
                 arg_offset=offset,
             )

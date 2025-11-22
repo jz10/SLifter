@@ -53,14 +53,14 @@ $L__BB0_2:                              // %BB_0060
 	{ .reg .b32 tmp; mov.b64 {tmp, %r43}, %rd9; }
 	neg.s32 	%r37, %r43;
 	mul.lo.s32 	%r38, %r6, %r37;
-	add.s32 	%r41, %r38, %r31;
-	setp.lt.u32 	%p2, %r41, %r6;
+	add.s32 	%r42, %r38, %r31;
+	setp.lt.u32 	%p2, %r42, %r6;
 	@%p2 bra 	$L__BB0_4;
 // %bb.3:                               // %BB_01b1
-	add.s32 	%r41, %r38, %r30;
+	add.s32 	%r42, %r38, %r30;
 	add.s32 	%r43, %r43, 1;
 $L__BB0_4:                              // %BB_01d0
-	setp.lt.u32 	%p3, %r41, %r6;
+	setp.lt.u32 	%p3, %r42, %r6;
 	@%p3 bra 	$L__BB0_6;
 // %bb.5:                               // %BB_01e1
 	add.s32 	%r43, %r43, 1;
@@ -94,10 +94,10 @@ $L__BB0_9:                              // %BB_0250
 	mad.lo.s32 	%r46, %r3, %r40, %r2;
 $L__BB0_10:                             // %BB_02d0
                                         // =>This Inner Loop Header: Depth=1
-	add.s64 	%rd11, %rd7, %rd24;
-	add.s64 	%rd12, %rd6, %rd24;
-	ld.global.f32 	%f10, [%rd11];
-	ld.global.f32 	%f11, [%rd12];
+	add.s64 	%rd11, %rd6, %rd24;
+	add.s64 	%rd12, %rd7, %rd24;
+	ld.global.f32 	%f10, [%rd12];
+	ld.global.f32 	%f11, [%rd11];
 	add.rn.f32 	%f12, %f10, %f11;
 	add.rn.f32 	%f28, %f12, %f28;
 	st.global.f32 	[%rd1], %f28;

@@ -28,8 +28,8 @@ class SaSSParser:
     # Retrieve ISA definition
     def get_isa(self, file):
         for line_num, line in enumerate(file.split('\n')):
-            if "arch = sm_" in line :
-                items = line.split(" = ")
+            if "code for sm" in line :
+                items = line.split("code for ")
                 return items[1]
 
         if "NVBit (NVidia Binary Instrumentation Tool" in file or "inspecting " in file:

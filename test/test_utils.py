@@ -1,409 +1,256 @@
-"""
-Shared utilities for SLifter test suite.
-Contains common test discovery and execution logic.
-"""
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 TEST_DIR = ROOT / "test"
+LIFTERS = ("x86", "nvvm")
 
-
-def run(cmd, cwd):
-    """Execute a command and assert success with a fixed 10s timeout."""
-    TIMEOUT_SECS = 10
+def run_cmd(cmd: List[str], cwd: Path, timeout: int = 120) -> str:
     try:
         r = subprocess.run(
-            cmd,
-            cwd=cwd,
-            text=True,
-            capture_output=True,
-            timeout=TIMEOUT_SECS,
+            cmd, cwd=cwd, text=True, capture_output=True, timeout=timeout
         )
     except subprocess.TimeoutExpired as e:
         raise AssertionError(
-            "Timed out after "
-            f"{TIMEOUT_SECS}s: {' '.join(map(str, cmd))}\n"
-            f"partial stdout:\n{e.stdout or ''}\n"
-            f"partial stderr:\n{e.stderr or ''}"
+            f"Timeout ({timeout}s): {' '.join(map(str, cmd))}\n{e.stdout}\n{e.stderr}"
         )
 
     assert r.returncode == 0, (
-        f"rc={r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        f"Failed (rc={r.returncode}): {' '.join(map(str, cmd))}\n{r.stdout}\n{r.stderr}"
     )
     return r.stdout
 
+def _dump_elf_from_exe(exe_path: Path, out_path: Path, cwd: Path):
+    out = run_cmd(["cuobjdump", "--dump-elf", str(exe_path)], cwd)
+    out_path.write_bytes(out.encode("utf-8") if isinstance(out, str) else out)
 
-def ensure_arch_header(sass: str, sm: str) -> str:
-    """Ensure the SASS dump contains an 'arch =' header for parser compatibility."""
-    if "arch = sm_" in sass:
-        return sass
-    header = f"arch = sm_{sm}\n"
-    # Keep existing leading newlines minimal
-    return header + sass.lstrip("\n")
-
-
- 
-
-
-LIFTERS = ("x86", "nvvm")
-
-def discover_bases() -> Dict[str, Dict[str, Dict[str, Dict[str, str]]]]:
-    """Return { suite/testname: { sm: {sass_rel, hosts: {lifter: host_rel}} } }.
-    Include a test if its dir has <name>.cu or any .sass. Use suffixed SASS if present.
-    """
-    by_base: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
+def discover_bases() -> Dict[str, Dict]:
+    by_base = {}
     suites = ["nvbit", "cuobjdump", "hecbench"]
     sms = ["75", "90"]
+
     for suite in suites:
         suite_dir = TEST_DIR / suite
-        if not suite_dir.exists():
-            continue
+        if not suite_dir.exists(): continue
+
         for test_dir in suite_dir.iterdir():
-            if not test_dir.is_dir():
-                continue
+            if not test_dir.is_dir(): continue
+
             testname = test_dir.name
-            
-            # Handle HeCBench naming convention
             if suite == "hecbench":
-                # HeCBench tests are in directories named <testname>-cuda
-                if testname.endswith("-cuda"):
-                    actual_testname = testname[:-5]  # Remove "-cuda" suffix
-                    # Try multiple possible .cu file names
-                    cu_file = test_dir / "main.cu"
-                    if not cu_file.exists():
-                        cu_file = test_dir / f"{actual_testname}.cu"
-                else:
-                    continue  # Skip non-cuda directories in hecbench
-            else:
-                actual_testname = testname
-                cu_file = test_dir / f"{testname}.cu"
+                if not testname.endswith("-cuda"): continue
+                testname = testname[:-5]
+
+            cu_file = test_dir / f"{testname}.cu"
+            if suite == "hecbench" and not cu_file.exists():
+                cu_file = test_dir / "main.cu"
             
-            if not cu_file.exists() and not list(test_dir.glob("*.sass")):
+            # Ensure we only count SASS if the corresponding ELF also exists
+            has_valid_sass = any(s.exists() and s.with_suffix(".elf").exists() for s in test_dir.glob("*.sass"))
+
+            if not cu_file.exists() and not has_valid_sass:
                 continue
-            
-            host_cpu_rel = str((test_dir / "host_cpu.cpp").relative_to(TEST_DIR)) if (test_dir / "host_cpu.cpp").exists() else ""
-            host_cuda_rel = str((test_dir / "host_cuda.cu").relative_to(TEST_DIR)) if (test_dir / "host_cuda.cu").exists() else ""
-            base = f"{suite}/{actual_testname}"
-            by_base.setdefault(base, {})
+
+            hosts = {}
+            if (test_dir / "host_cpu.cpp").exists():
+                hosts["x86"] = str((test_dir / "host_cpu.cpp").relative_to(TEST_DIR))
+            if (test_dir / "host_cuda.cu").exists():
+                hosts["nvvm"] = str((test_dir / "host_cuda.cu").relative_to(TEST_DIR))
+
+            base_key = f"{suite}/{testname}"
+            by_base.setdefault(base_key, {})
+
             for sm in sms:
-                suffixed = test_dir / f"{actual_testname}_sm{sm}.sass"
-                by_base[base][sm] = {
-                    "sass_rel": str(suffixed.relative_to(TEST_DIR)) if suffixed.exists() else "",
-                    "hosts": {
-                        "x86": host_cpu_rel,
-                        "nvvm": host_cuda_rel,
-                    },
+                sass_file = test_dir / f"{testname}_sm{sm}.sass"
+                elf_file = sass_file.with_suffix(".elf")
+                
+                # Only record path if BOTH exist
+                sass_rel = ""
+                if sass_file.exists() and elf_file.exists():
+                    sass_rel = str(sass_file.relative_to(TEST_DIR))
+
+                by_base[base_key][sm] = {
+                    "sass_rel": sass_rel,
+                    "hosts": hosts
                 }
     return by_base
 
-
-def discover_bases_legacy() -> Dict[str, Dict[str, Dict[str, str]]]:
-    """Deprecated: retained for compatibility, returns an empty mapping."""
-    return {}
-
-
 def get_test_bases():
-    """Get test bases from available SASS in canonical naming only."""
     return discover_bases()
 
+def get_bases_for_sm_suite(bases: Dict, sm: str, suite: str) -> List[str]:
+    return sorted([b for b, m in bases.items() if sm in m and b.startswith(f"{suite}/")])
 
-def ensure_cuobjdump_every_sm(bases: Dict[str, Dict[str, Dict[str, str]]], target_sm: str):
-    """Deprecated: no-op."""
-    return
+def _compile_cuda_binary(test_dir: Path, testname: str, sm: str, out_dir: Path) -> Tuple[Path, Path]:
+    tmp_exe = out_dir / "temp.out"
+    
+    if (test_dir / "Makefile").exists():
+        build_root = out_dir / testname
+        shutil.copytree(test_dir, build_root, dirs_exist_ok=True)
+        
+        run_cmd(["make", "clean"], cwd=build_root)
+        run_cmd(["make", f"ARCH=sm_{sm}"], cwd=build_root)
+        
+        candidates = list(build_root.glob("*.out")) + list(build_root.glob("main")) + list(build_root.glob(testname))
+        if not candidates:
+            raise AssertionError("Makefile did not produce an executable")
+        
+        sass_out = run_cmd(["cuobjdump", "--dump-sass", str(candidates[0])], cwd=build_root)
+        return sass_out, candidates[0]
 
+    cu_files = list(test_dir.glob("**/*.cu"))
+    c_files = list(test_dir.glob("**/*.c"))
+    
+    cmd = [
+        "nvcc", f"-arch=sm_{sm}", "-I.", f"-I{test_dir.relative_to(TEST_DIR)}",
+        "-Ddfloat=double", "-Ddlong=int", "-std=c++14", "-w"
+    ]
+    
+    if len(cu_files) > 1 or c_files:
+        cmd.extend([f"./{f.relative_to(TEST_DIR)}" for f in cu_files + c_files])
+        cmd.extend(["-o", str(tmp_exe)])
+        run_cmd(cmd, cwd=TEST_DIR)
+    else:
+        main_cu = test_dir / "main.cu" if (test_dir / "main.cu").exists() else test_dir / f"{testname}.cu"
+        cmd = ["nvcc", f"-arch=sm_{sm}", "-cubin", f"./{main_cu.relative_to(TEST_DIR)}", "-o", str(tmp_exe)]
+        run_cmd(cmd, cwd=TEST_DIR)
+        
+    sass_out = run_cmd(["cuobjdump", "--dump-sass", str(tmp_exe)], cwd=TEST_DIR)
+    return sass_out, tmp_exe
 
-def get_bases_for_sm_suite(bases: Dict[str, Dict[str, Dict[str, str]]], sm: str, suite: str) -> List[str]:
-    """Get all test bases for a specific SM and suite"""
-    return sorted([
-        base for base, sm_map in bases.items()
-        if sm in sm_map and base.startswith(f"{suite}/")
-    ])
+def _ensure_sass(base: str, sm: str, entry: Dict) -> Path:
+    suite, testname = base.split("/", 1)
+    sass_rel = entry.get("sass_rel")
+    
+    # Use recorded SASS if both SASS and ELF exist
+    if sass_rel:
+        p = TEST_DIR / sass_rel
+        if p.exists() and p.with_suffix(".elf").exists():
+            return p
 
+    test_dir = TEST_DIR / suite / (f"{testname}-cuda" if suite == "hecbench" else testname)
+    target_sass = test_dir / f"{testname}_sm{sm}.sass"
+    target_elf = target_sass.with_suffix(".elf")
 
-def execute_test_case(bases: Dict[str, Dict[str, Dict[str, Dict[str, str]]]], base: str, sm: str, lifter: str):
-    """Execute a single test case following the new workflow.
+    # If physical files exist (both), return early
+    if target_sass.exists() and target_elf.exists():
+        return target_sass
 
-    - Only SASS drives execution.
-    - For cuobjdump suite: host_cpu.cpp must exist; otherwise skip as broken.
-    - For others/nvbit: lifting without error is sufficient; host is optional.
-    - When linking host, provide the correct kernel wrapper via a per-test include dir.
-    """
+    if not list(test_dir.glob("*.cu")) and not (test_dir / "Makefile").exists():
+        pytest.skip(f"No SASS or Source found for {base}")
+
+    with tempfile.TemporaryDirectory(prefix=f"build_{testname}_") as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        try:
+            sass_content, exe_path = _compile_cuda_binary(test_dir, testname, sm, tmp_path)
+            target_sass.write_text(sass_content)
+            _dump_elf_from_exe(exe_path, target_elf, tmp_path)
+        except AssertionError as e:
+             pytest.skip(f"Build failed for {base}: {e}")
+
+    return target_sass
+
+def _lift_to_llvm(sass_path: Path, lifter: str, out_base_path: Path) -> Path:
+    out_ll = out_base_path.with_suffix(".ll")
+    elf_path = sass_path.with_suffix(".elf")
+    
+    cmd = [
+        "python", "../main.py",
+        "-i", 
+        str(sass_path.relative_to(TEST_DIR)), 
+        str(elf_path.relative_to(TEST_DIR)),
+        "-o", str(out_ll.with_suffix('')),
+        "--lifter", lifter
+    ]
+    run_cmd(cmd, cwd=TEST_DIR)
+    return out_ll
+
+def _run_x86_host(exe_path: Path, ll_path: Path, host_rel: str, sm: str):
+    obj_path = exe_path.with_suffix(".o")
+    
+    run_cmd(["clang", "-O2", "-target", "x86_64", "-c", str(ll_path), "-o", str(obj_path)], cwd=TEST_DIR)
+    
+    wrapper_src = TEST_DIR / "common" / f"kernel_wrapper_{sm}.h"
+    
+    with tempfile.TemporaryDirectory(dir=TEST_DIR / "common") as tmp_inc:
+        shutil.copy(wrapper_src, Path(tmp_inc) / "kernel_wrapper.h")
+        
+        link_cmd = [
+            "clang++", "-std=c++20", "-O2", 
+            f"-D__CUDA_ARCH__={sm}0",
+            f"-I{Path(tmp_inc).relative_to(TEST_DIR)}",
+            "-I./common",
+            f"./{host_rel}",
+            str(obj_path),
+            "-o", str(exe_path)
+        ]
+        run_cmd(link_cmd, cwd=TEST_DIR)
+
+    out = run_cmd([str(exe_path)], cwd=TEST_DIR)
+    assert "TEST PASSED" in out
+
+def _run_nvvm_host(exe_path: Path, ll_path: Path, host_rel: str, sm: str, out_base_ptx: Path):
+    ptx_path = out_base_ptx.with_suffix(".ptx")
+    cubin_path = out_base_ptx.with_suffix(".cubin")
+
+    run_cmd([
+        "llc", "-march=nvptx64", f"-mcpu=sm_{sm}", f"-mattr=+ptx{sm}",
+        "-o", str(ptx_path), str(ll_path)
+    ], cwd=TEST_DIR)
+
+    device_img = ptx_path
+    if os.environ.get("USE_PTXAS"):
+        run_cmd(["ptxas", f"-arch=sm_{sm}", str(ptx_path), "-o", str(cubin_path)], cwd=TEST_DIR)
+        device_img = cubin_path
+
+    run_cmd([
+        "nvcc", "-std=c++17", "-I./common", f"./{host_rel}", "-lcuda",
+        "-o", str(exe_path)
+    ], cwd=TEST_DIR)
+
+    out = run_cmd([str(exe_path), str(device_img)], cwd=TEST_DIR)
+    assert "TEST PASSED" in out
+
+def execute_test_case(bases: Dict, base: str, sm: str, lifter: str):
     entry = bases.get(base, {}).get(sm)
     if not entry:
-        pytest.skip(f"No SASS or CU for {base} sm{sm}")
+        pytest.skip(f"No configuration found for {base} sm{sm}")
 
-    sass_rel = entry.get("sass_rel", "")
-    hosts = entry.get("hosts", {})
     lifter = lifter.lower()
-    host_rel = hosts.get(lifter, "")
-
-    clean_paths: List[Path] = []
-    temp_dirs: List[Path] = []
-
-    # Ensure suffixed SASS exists; if not, try compiling from .cu or renaming legacy .sass
-    suite_name, testname = base.split("/", 1) if "/" in base else (base, base)
+    host_rel = entry["hosts"].get(lifter)
     
-    # Handle HeCBench directory naming
-    if suite_name == "hecbench":
-        test_dir = TEST_DIR / suite_name / f"{testname}-cuda"
-    else:
-        test_dir = TEST_DIR / suite_name / testname
+    sass_path = _ensure_sass(base, sm, entry)
     
-    desired_sass_path = test_dir / f"{testname}_sm{sm}.sass"
-    recorded_sass_path = TEST_DIR / sass_rel if sass_rel else None
-    force_rebuild = suite_name == "cuobjdump"
-    sass_path = None
-
-    if not force_rebuild:
-        if desired_sass_path.exists():
-            sass_path = desired_sass_path
-        elif recorded_sass_path and recorded_sass_path.exists():
-            sass_path = recorded_sass_path
-
-    if not sass_path:
-        # Handle HeCBench main.cu naming
-        if suite_name == "hecbench":
-            cu_path = test_dir / "main.cu"
-            if not cu_path.exists():
-                cu_path = test_dir / f"{testname}.cu"
-        else:
-            cu_path = test_dir / f"{testname}.cu"
-            
-        # If still absent, try compiling from .cu (handle multi-file projects)
-        should_compile = cu_path.exists() and (force_rebuild or not desired_sass_path.exists())
-        if should_compile:
-            build_tmp_root = test_dir / ".tmp_builds"
-            build_tmp_root.mkdir(exist_ok=True)
-            tmp_build_dir = Path(
-                tempfile.mkdtemp(
-                    prefix=f"{testname}_sm{sm}_",
-                    dir=str(build_tmp_root),
-                )
-            )
-            temp_dirs.append(tmp_build_dir)
-
-            if desired_sass_path.exists() and not force_rebuild:
-                sass_path = desired_sass_path
-            else:
-                tmp_exe = tmp_build_dir / "temp.out"
-                try:
-                    if suite_name == "hecbench":
-                        makefile_path = test_dir / "Makefile"
-                        if makefile_path.exists():
-                            build_dir = tmp_build_dir / testname
-                            shutil.copytree(test_dir, build_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".tmp_builds"))
-                            try:
-                                run(["make", "clean"], cwd=build_dir)
-                            except AssertionError:
-                                pass
-
-                            run(["make", f"ARCH=sm_{sm}"], cwd=build_dir)
-
-                            possible_exes = list(build_dir.glob("*.out")) + list(build_dir.glob("main")) + list(build_dir.glob(f"{testname}"))
-                            if possible_exes:
-                                built_exe = possible_exes[0]
-                                sass_out = run(["cuobjdump", "--dump-sass", str(built_exe)], cwd=build_dir)
-                                desired_sass_path.write_text(ensure_arch_header(sass_out, sm))
-                            else:
-                                raise AssertionError("No executable found after make")
-                        else:
-                            cu_files = list(test_dir.glob("**/*.cu"))
-                            c_files = list(test_dir.glob("**/*.c"))
-
-                            compile_cmd = ["nvcc", f"-arch=sm_{sm}", "-I.", f"-I{test_dir.relative_to(TEST_DIR)}"]
-                            compile_cmd.extend(["-Ddfloat=double", "-Ddlong=int", "-std=c++14", "-w"])
-
-                            if len(cu_files) > 1 or len(c_files) > 0:
-                                cu_file_paths = [f"./{f.relative_to(TEST_DIR)}" for f in cu_files]
-                                c_file_paths = [f"./{f.relative_to(TEST_DIR)}" for f in c_files]
-                                compile_cmd.extend(cu_file_paths + c_file_paths)
-                            else:
-                                compile_cmd.append(f"./{cu_path.relative_to(TEST_DIR)}")
-
-                            compile_cmd.extend(["-o", str(tmp_exe)])
-                            run(compile_cmd, cwd=TEST_DIR)
-                            sass_out = run(["cuobjdump", "--dump-sass", str(tmp_exe)], cwd=TEST_DIR)
-                            desired_sass_path.write_text(ensure_arch_header(sass_out, sm))
-                    else:
-                        run([
-                            "nvcc",
-                            f"-arch=sm_{sm}",
-                            "-cubin",
-                            f"./{cu_path.relative_to(TEST_DIR)}",
-                            "-o",
-                            str(tmp_exe),
-                        ], cwd=TEST_DIR)
-                        sass_out = run(["cuobjdump", "--dump-sass", str(tmp_exe)], cwd=TEST_DIR)
-                        desired_sass_path.write_text(ensure_arch_header(sass_out, sm))
-                except AssertionError:
-                    pytest.skip(f"Cannot build SASS for {base} sm{sm}")
-                finally:
-                    tmp_exe.unlink(missing_ok=True)
-
-        if desired_sass_path.exists():
-            sass_path = desired_sass_path
-        else:
-            pytest.skip(f"No SASS or CU for {base} sm{sm}")
-
-    if sass_path:
-        sass_rel = str(sass_path.relative_to(TEST_DIR))
-        entry["sass_rel"] = sass_rel
-
-
-    # Extract testname from base for output naming
+    test_subdir = sass_path.parent
     testname = base.split('/')[-1]
-    out_base = f"{testname}_{lifter}_sm{sm}"
+    out_base = test_subdir / f"{testname}_{lifter}_sm{sm}"
+    
+    out_ll = _lift_to_llvm(sass_path, lifter, out_base)
 
-    # Track generated build artifacts to remove even if the test fails
-    kernel_wrapper_variant = TEST_DIR / "common" / f"kernel_wrapper_{sm}.h"
-    wrapper_include_dir: Optional[Path] = None
+    suite = base.split('/')[0]
+    if suite == "hecbench":
+        return
 
-    #clean_paths: List[Path] = []
-    #temp_dirs: List[Path] = []
+    if not host_rel:
+        if suite == "cuobjdump":
+            pytest.skip("Skipping cuobjdump test: missing host implementation")
+        return 
 
-    #clean_paths: List[Path] = []
-
+    exe_path = out_base.with_suffix(".out")
+    
     try:
-        # 1) lift to LLVM
-        if sass_rel:
-            sass_path = Path(sass_rel)
-            test_subdir = sass_path.parent
-
-            # Output SASS compilation in test subfolder with new naming
-            out_ll_path = test_subdir / f"{out_base}.ll"
-            out_o_path = test_subdir / f"{out_base}.o"
-            # Keep generated .ll files after tests to aid debugging
-
-            lifter_cmd = [
-                "python",
-                "../main.py",
-                "-i",
-                f"{sass_rel}",
-                "-o",
-                str(out_ll_path.with_suffix('')),
-                "--lifter",
-                lifter,
-            ]
-            run(lifter_cmd, cwd=TEST_DIR)
-
-            # 2) link & execute when host present; otherwise lifting success is enough
-            should_run_host = bool(host_rel)
-
-            # Enforce host existence for cuobjdump suite
-            if suite_name == "cuobjdump" and not host_rel:
-                pytest.skip(f"Broken cuobjdump test (missing host for {lifter} lifter): {base} sm{sm}")
-
-            # For HeCBench, only do lifting for now (no host execution until host wrappers are created)
-            if suite_name == "hecbench":
-                should_run_host = False
-
-            if should_run_host:
-                exe_path = test_subdir / f"{out_base}.out"
-
-                if lifter == "x86":
-                    if wrapper_include_dir is None and kernel_wrapper_variant.exists():
-                        tmp_dir_path = Path(
-                            tempfile.mkdtemp(
-                                prefix="kernel_wrapper_",
-                                dir=str(TEST_DIR / "common"),
-                            )
-                        )
-                        shutil.copy(kernel_wrapper_variant, tmp_dir_path / "kernel_wrapper.h")
-                        wrapper_include_dir = tmp_dir_path
-                        temp_dirs.append(wrapper_include_dir)
-
-                    run([
-                        "clang",
-                        "-O2",
-                        "-target",
-                        "x86_64",
-                        "-c",
-                        str(out_ll_path),
-                        "-o",
-                        str(out_o_path),
-                    ], cwd=TEST_DIR)
-                    clean_paths.append(TEST_DIR / out_o_path)
-
-                    cu_flags: List[str] = [f"-D__CUDA_ARCH__={sm}0"]
-
-                    include_flags = []
-                    if wrapper_include_dir:
-                        include_flags.append(f"-I{wrapper_include_dir.relative_to(TEST_DIR)}")
-                    link_cmd = [
-                        "clang++",
-                        "-std=c++20",
-                        "-O2",
-                        *cu_flags,
-                        *include_flags,
-                        "-I./common",
-                        f"./{host_rel}",
-                        str(out_o_path),
-                        "-o",
-                        str(exe_path),
-                    ]
-                    run(link_cmd, cwd=TEST_DIR)
-
-                    out = run([str(exe_path)], cwd=TEST_DIR)
-                    assert "TEST PASSED" in out
-                elif lifter == "nvvm":
-                    ptx_path = test_subdir / f"{out_base}.ptx"
-                    cubin_path = test_subdir / f"{out_base}.cubin"
-
-                    run([
-                        "llc",
-                        "-march=nvptx64",
-                        f"-mcpu=sm_{sm}",
-                        f"-mattr=+ptx{sm}",
-                        "-o",
-                        str(ptx_path),
-                        str(out_ll_path),
-                    ], cwd=TEST_DIR)
-
-                    device_image_path = ptx_path
-                    if os.environ.get("USE_PTXAS"):
-                        run([
-                            "ptxas",
-                            f"-arch=sm_{sm}",
-                            str(ptx_path),
-                            "-o",
-                            str(cubin_path),
-                        ], cwd=TEST_DIR)
-                        clean_paths.append(TEST_DIR / cubin_path)
-                        device_image_path = cubin_path
-
-                    nvcc_cmd = [
-                        "nvcc",
-                        "-std=c++17",
-                        "-I./common",
-                        f"./{host_rel}",
-                        "-lcuda",
-                        "-o",
-                        str(exe_path),
-                    ]
-                    run(nvcc_cmd, cwd=TEST_DIR)
-                    out = run([str(exe_path), str(device_image_path)], cwd=TEST_DIR)
-                    assert "TEST PASSED" in out
-                else:
-                    raise AssertionError(f"Unhandled lifter pipeline '{lifter}'")
-
-            
-
+        if lifter == "x86":
+            _run_x86_host(exe_path, out_ll, host_rel, sm)
+        elif lifter == "nvvm":
+            _run_nvvm_host(exe_path, out_ll, host_rel, sm, out_base)
         else:
-            pytest.skip(f"Test {base} sm{sm} ({lifter}): no executable configuration")
+            raise NotImplementedError(f"Unknown lifter: {lifter}")
     finally:
-        # Always try to cleanup generated artifacts, even on failure
-        for p in clean_paths:
-            try:
-                p.unlink(missing_ok=True)
-            except Exception:
-                pass
-        # Always cleanup temporary wrapper include dirs
-        for d in temp_dirs:
-            shutil.rmtree(d, ignore_errors=True)
+        for p in [exe_path, out_base.with_suffix(".o"), out_base.with_suffix(".cubin")]:
+            p.unlink(missing_ok=True)

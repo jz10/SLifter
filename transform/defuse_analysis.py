@@ -57,6 +57,10 @@ class DefUseAnalysis(SaSSTransform):
                         # Track which specific def operand defined the register
                         curr_defs[def_op.reg] = {(inst, def_op)}
                         bb.GenDefs[inst] = def_op
+                        
+                        def_op.defining_insts = {inst}
+                        inst.reaching_defs[def_op] = inst
+                        inst.ReachingDefsSet.setdefault(def_op, set()).add((inst, def_op))
 
             bb.OutDefs = {reg: set(defs) for reg, defs in curr_defs.items()}
 

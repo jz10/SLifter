@@ -1,4 +1,5 @@
 import argparse
+import pathlib
 from parse.parser import SaSSParser
 from sir.module import Module
 from lift.lifter_nvvm import NVVMLifter
@@ -10,15 +11,14 @@ def main():
     parser.add_argument(
         "-i",
         "--input",
-        help="input sass file",
         dest="input_asm",
         required=True,
+        nargs="+",
         metavar="FILE",
     )
     parser.add_argument(
         "-o", "--output", help="output LLVM module name", dest="output_module"
     )
-    parser.add_argument("-inc", "--include", help="include files", nargs="+")
     parser.add_argument(
         "-name",
         "--kernel-name",
@@ -41,18 +41,28 @@ def main():
     )
     args = parser.parse_args()
 
-    with open(args.input_asm, "r") as input_file:
-        file = input_file.read()
+    with open(args.input_asm[0], "r") as input_sass:
+        file = input_sass.read()
         sass_parser = SaSSParser(file)
         module = Module(args.output_module, sass_parser)
+        
+    input_elf = None
+    if len(args.input_asm) > 1:
+        elf_file_path = args.input_asm[1]
+        p = pathlib.Path(elf_file_path)
+        if p.exists():
+            input_elf = p.read_text()
+        
 
     verbose_mode = bool(args.verbose)
     if args.lifter == "nvvm":
-        lifter = NVVMLifter(verbose=verbose_mode)
+        lifter = NVVMLifter(elf=input_elf, verbose=verbose_mode)
     elif args.lifter == "x86":
-        lifter = X86Lifter(verbose=verbose_mode)
+        lifter = X86Lifter(elf=input_elf, verbose=verbose_mode)
     else:
         raise ValueError(f"Unknown lifter backend '{args.lifter}'")
+    
+        
 
     file_name = args.output_module + ".ll"
     with open(file_name, "w") as output_file:

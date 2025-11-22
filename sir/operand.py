@@ -143,7 +143,7 @@ class Operand:
         )
 
     @classmethod
-    def from_arg(cls, name, arg_offset, reg_name=None, prefix=None):
+    def from_cm(cls, name, arg_offset, reg_name=None, prefix=None):
         return cls(
             name=name,
             reg=reg_name,
@@ -228,10 +228,6 @@ class Operand:
     @property
     def is_arg(self):
         return self.is_const_mem and self.const_mem_bank == 0
-
-    @property
-    def arg_offset(self):
-        return self.offset_value if self.is_arg else None
 
     @property
     def offset(self):
@@ -466,8 +462,8 @@ class Operand:
             if self.suffix and self.suffix != "reuse":
                 return f"{rendered}.{self.suffix}"
             return rendered
-        elif self.is_arg:
-            return f"c[0x0][0x{self.arg_offset:x}]"
+        elif self.is_const_mem:
+            return f"c[0x{self.const_mem_bank:x}][0x{self.offset_value:x}]"
         elif self.is_special_reg:
             return self.name
         elif self.is_immediate:
@@ -514,19 +510,13 @@ class Operand:
         return self.type_desc != "NOTYPE"
 
     def get_ir_type(self, lifter):
-        if self.ir_type is None:
-            getter = getattr(lifter, "get_ir_type", None) or getattr(
-                lifter, "GetIRType"
-            )
-            self.ir_type = getter(self.type_desc)
-
-        return self.ir_type
+        return lifter.get_ir_type(self.type_desc)
 
     def get_ir_name(self, lifter):
         if self.is_reg:
             return self.reg + self.type_desc
-        if self.is_arg and self.arg_offset is not None:
-            return f"c[0x0][0x{int(self.arg_offset):x}]" + self.type_desc
+        if self.is_const_mem:
+            return f"c[0x0{self.const_mem_bank:x}][0x{self.offset_value:x}]" + self.type_desc
         return None
 
     def dump(self):

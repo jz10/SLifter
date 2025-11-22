@@ -16,24 +16,6 @@ host = linux
 compile_size = 64bit
 
 	code for sm_75
-
-Fatbin ptx code:
-================
-arch = sm_75
-code version = [8,5]
-host = linux
-compile_size = 64bit
-compressed
-ptxasOptions = 
-
-Fatbin elf code:
-================
-arch = sm_75
-code version = [1,7]
-host = linux
-compile_size = 64bit
-
-	code for sm_75
 		Function : _Z7cenergyifPfPK6float4
 	.headerflags	@"EF_CUDA_TEXMODE_UNIFIED EF_CUDA_64BIT_ADDRESS EF_CUDA_SM75 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM75)"
         /*0000*/                   MOV R1, c[0x0][0x28] ;                                       /* 0x00000a0000017a02 */
@@ -599,6 +581,24 @@ compile_size = 64bit
 		..........
 
 
+
+Fatbin ptx code:
+================
+arch = sm_75
+code version = [8,5]
+host = linux
+compile_size = 64bit
+compressed
+ptxasOptions = 
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+	code for sm_75
 
 Fatbin ptx code:
 ================

@@ -31,11 +31,11 @@ int main() {
 
     bool ok = true;
     for (int tid = 0; tid < N; ++tid) {
-        int expected = 0;
+        float expected = 0;
         for (int i = tid; i < N; i += 1)
             expected += A[i] + B[i];
 
-        double tol = 1e-3 * std::fabs(expected);
+        float tol = 1e-3 * std::fabs(expected);
         if (std::fabs(C[tid] - expected) > tol) {
             std::cerr << "Mismatch at " << tid << ": got " << C[tid]
                       << ", expected " << expected << "\n";

@@ -242,10 +242,10 @@ class X86Lifter(Lifter):
                 [
                     self.ir.Constant(self.ir.IntType(64), 0),
                     self.ir.Constant(self.ir.IntType(64), 0),
-                    self.ir.Constant(self.ir.IntType(64), entry.arg_offset),
+                    self.ir.Constant(self.ir.IntType(64), entry.offset),
                 ],
             )
-            name = offset_to_sr.get(entry.arg_offset, entry.get_ir_name(self))
+            name = offset_to_sr.get(entry.offset, entry.get_ir_name(self))
             addr = builder.bitcast(
                 addr, self.ir.PointerType(self.get_ir_type(entry.type_desc))
             )
@@ -287,6 +287,25 @@ class X86Lifter(Lifter):
             if op.is_reg:
                 irName = op.get_ir_name(self)
                 val = IRRegs[irName]
+                
+                # cast if type mismatch
+                if val.type != op.get_ir_type(self):
+                    # determine cast type
+                    target_ty = op.get_ir_type(self)
+                    if "i" in target_ty.intrinsic_name and "i" in val.type.intrinsic_name:
+                        if val.type.width < target_ty.width:
+                            val = IRBuilder.zext(val, target_ty, f"{name}_zext" if name else "reg_zext")
+                        elif val.type.width > target_ty.width:
+                            val = IRBuilder.trunc(val, target_ty, f"{name}_trunc" if name else "reg_trunc")
+                            
+                    elif "f" in target_ty.intrinsic_name and "f" in val.type.intrinsic_name:
+                        if val.type.width < target_ty.width:
+                            val = IRBuilder.fpext(val, target_ty, f"{name}_fpext" if name else "reg_fpext")
+                        elif val.type.width > target_ty.width:
+                            val = IRBuilder.fptrunc(val, target_ty, f"{name}_fptrunc" if name else "reg_fptrunc")
+                            
+                    else:
+                        val = IRBuilder.bitcast(val, target_ty, f"{name}_bitcast" if name else "reg_bitcast")
                     
                 if op.is_negative_reg:
                     if op.get_type_desc().startswith('F'):
@@ -302,10 +321,28 @@ class X86Lifter(Lifter):
                     else:
                         abs_fn = self.get_intrinsic("abs")
                         val = IRBuilder.call(abs_fn, [val], f"{name}_abs")
+                
+                # [R20+0x4]
+                if op.is_mem_addr and op.offset:
+                    val = IRBuilder.add(
+                        val,
+                        self.ir.Constant(val.type, op.offset),
+                        f"{name}_memaddr_offset_add"
+                    )
+                    
                 return val
             if op.is_arg:
                 return ConstMem[op.get_ir_name(self)]
             if op.is_immediate:
+                return self.ir.Constant(op.get_ir_type(self), op.immediate_value)
+            if op.is_const_mem and not op.is_arg:
+                bank = op.const_mem_bank
+                curr_cm_map = self.cm_map[self.curr_function.name]
+                offset = int(op.offset_value / 8)
+                if op.offset_value % 8 != 0:
+                    raise UnsupportedInstructionException(f"how?")
+                return self.ir.Constant(op.get_ir_type(self), curr_cm_map[bank][offset])
+            if op.is_mem_addr and not op.is_reg: # E.g. LDS.U R2 = [0xc]
                 return self.ir.Constant(op.get_ir_type(self), op.immediate_value)
             raise UnsupportedInstructionException(f"Unsupported operand type: {op}")
 
@@ -351,7 +388,7 @@ class X86Lifter(Lifter):
         else:
             print(f"S2R: Unknown special register {valop.name}")
             val = self.ir.Constant(self.ir.IntType(32), 0)
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("LDG", "LDG64")
@@ -366,7 +403,7 @@ class X86Lifter(Lifter):
             f"{ptr.get_ir_name(self)}_addr_ptr" if ptr.is_reg else "ldg_addr_ptr"
             )
         val = IRBuilder.load(addr_ptr, "ldg", typ=pointee_ty)
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("STG")
@@ -396,7 +433,7 @@ class X86Lifter(Lifter):
                 "lds_shared_addr_cast",
             )
         val = IRBuilder.load(addr, "lds", typ=dest.get_ir_type(self))
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("STS")
@@ -422,7 +459,7 @@ class X86Lifter(Lifter):
         addr = _get_val(ptr, "ldl_addr")
         addr = IRBuilder.gep(self.LocalMem, [self.ir.Constant(self.ir.IntType(32), 0), addr], "ldl_local_addr")
         val = IRBuilder.load(addr, "ldl", typ=dest.get_ir_type(self))
-        IRRegs[dest.get_ir_name(self)] = val
+        self._set_val(IRBuilder, IRRegs, dest, val)
 
 
     @lift_for("STL")
@@ -451,7 +488,7 @@ class X86Lifter(Lifter):
         if func == "RCP": # 1/v
             one = self.ir.Constant(dest.get_ir_type(self), 1.0)
             res = IRBuilder.fdiv(one, v, "mufu_rcp")
-            IRRegs[dest.get_ir_name(self)] = res
+            self._set_val(IRBuilder, IRRegs, dest, res)
         else:
             raise UnsupportedInstructionException
 
@@ -542,7 +579,7 @@ class X86Lifter(Lifter):
             else:
                 voteVal = IRBuilder.bitcast(voteVal, dest_ty, f"vote_{mode.lower()}_cast")
 
-        IRRegs[dest.get_ir_name(self)] = voteVal
+        self._set_val(IRBuilder, IRRegs, dest, voteVal)
 
 
     @lift_for("SHFL")
@@ -574,10 +611,9 @@ class X86Lifter(Lifter):
 
         dest_type = destReg.get_ir_type(self)
 
-        IRRegs[destReg.get_ir_name(self)] = shflVal
+        self._set_val(IRBuilder, IRRegs, destReg, shflVal)
         if not destPred.is_pt:
-            IRRegs[destPred.get_ir_name(self)] = self.ir.Constant(self.ir.IntType(1), 1)
-
+            self._set_val(IRBuilder, IRRegs, destPred, self.ir.Constant(self.ir.IntType(1), 1))
 
     @lift_for("MATCH")
     def lift_match(self, Inst, IRBuilder, IRRegs, ConstMem, block_map, _get_val=None, _as_pointer=None):
@@ -602,7 +638,7 @@ class X86Lifter(Lifter):
         match_fn = self.get_intrinsic(funcName)
 
         matchVal = IRBuilder.call(match_fn, [val], "match")
-        IRRegs[dest.get_ir_name(self)] = matchVal
+        self._set_val(IRBuilder, IRRegs, dest, matchVal)
 
 
     @lift_for("BREV", "UBREV")
@@ -614,7 +650,7 @@ class X86Lifter(Lifter):
         rev_fn = self.get_intrinsic("brev")
 
         revVal = IRBuilder.call(rev_fn, [val], "brev")
-        IRRegs[dest.get_ir_name(self)] = revVal
+        self._set_val(IRBuilder, IRRegs, dest, revVal)
 
 
     @lift_for("FLO", "UFLO")
@@ -645,7 +681,7 @@ class X86Lifter(Lifter):
         )
 
         floVal = IRBuilder.call(ctlz_fn, [val], "flo")
-        IRRegs[dest.get_ir_name(self)] = floVal
+        self._set_val(IRBuilder, IRRegs, dest, floVal)
 
 
     @lift_for("ATOM")
@@ -676,7 +712,7 @@ class X86Lifter(Lifter):
         prmt_fn = self.get_intrinsic("prmt")
 
         prmtVal = IRBuilder.call(prmt_fn, [v1, v2, imm8], "prmt")
-        IRRegs[dest.get_ir_name(self)] = prmtVal
+        self._set_val(IRBuilder, IRRegs, dest, prmtVal)
 
 
     def postprocess_ir(self, ir_code):

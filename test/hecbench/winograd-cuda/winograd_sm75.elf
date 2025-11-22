@@ -1,0 +1,434 @@
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+64bit elf: type=2, abi=7, sm=75, toolkit=125, flags = 0x4b054b
+Sections:
+Index Offset   Size ES Align        Type        Flags Link     Info Name
+    1     40     5d  0  1            STRTAB       0    0        0 .shstrtab
+    2     9d     5d  0  1            STRTAB       0    0        0 .strtab
+    3    100     48 18  8            SYMTAB       0    2        3 .symtab
+    4    148     20  8  4    CUDA_CALLGRAPH       0    3        0 .nv.callgraph
+    5    168     10  8  8    CUDA_RELOCINFO       0    0        0 .nv.rel.action
+
+.section .strtab
+
+.section .shstrtab
+
+.section .symtab
+ index           value           size      info    other  shndx    name  
+   0               0               0        0        0      0     (null)
+ 0x1               0               0      0x3        0    0x4     .nv.callgraph
+ 0x2               0               0      0x3        0    0x5     .nv.rel.action
+
+
+.nv.callgraph
+ <0,-1>
+ <0,-2>
+ <0,-3>
+ <0,-4>
+
+
+.nv.rel.action
+Header : Base Relocation : R_CUDA_CONST_FIELD22_37
+Reloc type : Symbol Kind,Addend Shift,Source Position1,length1,Destination Position1,Source Position2,length2,Destination Position2
+R_CUDA_CONST_FIELD22_37 : EIVALUE_SYM_KIND_ADDR,0,0,17,37,0,5,54
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+64bit elf: type=2, abi=7, sm=75, toolkit=125, flags = 0x4b054b
+Sections:
+Index Offset   Size ES Align        Type        Flags Link     Info Name
+    1     40    15d  0  1            STRTAB       0    0        0 .shstrtab
+    2    19d    17b  0  1            STRTAB       0    0        0 .strtab
+    3    318     a8 18  8            SYMTAB       0    2        6 .symtab
+    4    3c0     70  0  1          PROGBITS       0    0        0 .debug_frame
+    5    430     30  0  4         CUDA_INFO       0    3        0 .nv.info
+    6    460     80  0  4         CUDA_INFO      40    3        b .nv.info._Z15winograd_conv2dPKfS0_Pfii
+    7    4e0     20  8  4    CUDA_CALLGRAPH       0    3        0 .nv.callgraph
+    8    500     10  8  8    CUDA_RELOCINFO       0    0        0 .nv.rel.action
+    9    510     10 10  8               REL      40    3        4 .rel.debug_frame
+    a    520    180  0  4          PROGBITS      42    0        b .nv.constant0._Z15winograd_conv2dPKfS0_Pfii
+    b    700    880  0 80          PROGBITS       6    3 30000006 .text._Z15winograd_conv2dPKfS0_Pfii
+
+.section .strtab
+
+.section .shstrtab
+
+.section .symtab
+ index           value           size      info    other  shndx    name  
+   0               0               0        0        0      0     (null)
+ 0x1               0               0      0x3        0    0xb     .text._Z15winograd_conv2dPKfS0_Pfii
+ 0x2               0               0      0x3        0    0xa     .nv.constant0._Z15winograd_conv2dPKfS0_Pfii
+ 0x3               0               0      0x3        0    0x4     .debug_frame
+ 0x4               0               0      0x3        0    0x7     .nv.callgraph
+ 0x5               0               0      0x3        0    0x8     .nv.rel.action
+ 0x6               0           0x880     0x12     0x10    0xb     _Z15winograd_conv2dPKfS0_Pfii
+
+
+.nv.constant0._Z15winograd_conv2dPKfS0_Pfii
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+
+
+
+.nv.info
+	<0x1>
+	Attribute:	EIATTR_REGCOUNT
+	Format:	EIFMT_SVAL
+	Value:	function: _Z15winograd_conv2dPKfS0_Pfii(0x6)	register count: 48
+	<0x2>
+	Attribute:	EIATTR_MIN_STACK_SIZE
+	Format:	EIFMT_SVAL
+	Value:	function: _Z15winograd_conv2dPKfS0_Pfii(0x6)	min stack size: 0x0
+	<0x3>
+	Attribute:	EIATTR_FRAME_SIZE
+	Format:	EIFMT_SVAL
+	Value:	function: _Z15winograd_conv2dPKfS0_Pfii(0x6)	frame size: 0x0
+	<0x4>
+	Attribute:	EIATTR_MIN_STACK_SIZE
+	Format:	EIFMT_SVAL
+	Value:	function: _Z15winograd_conv2dPKfS0_Pfii(0x6)	min stack size: 0x0
+
+
+.nv.info._Z15winograd_conv2dPKfS0_Pfii
+	<0x1>
+	Attribute:	EIATTR_SW_WAR
+	Format:	EIFMT_SVAL
+	Value:	0x1 
+	<0x2>
+	Attribute:	EIATTR_CUDA_API_VERSION
+	Format:	EIFMT_SVAL
+	Value:	0x7d 
+	<0x3>
+	Attribute:	EIATTR_PARAM_CBANK
+	Format:	EIFMT_SVAL
+	Value:	0x2 0x200160 
+	<0x4>
+	Attribute:	EIATTR_CBANK_PARAM_SIZE
+	Format:	EIFMT_HVAL
+	Value:	0x20
+	<0x5>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x4	Offset  : 0x1c	Size    : 0x4
+		Pointee's logAlignment : 0x0	Space : 0x0	cbank : 0x1f	Parameter Space : CBANK	
+	<0x6>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x3	Offset  : 0x18	Size    : 0x4
+		Pointee's logAlignment : 0x0	Space : 0x0	cbank : 0x1f	Parameter Space : CBANK	
+	<0x7>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x2	Offset  : 0x10	Size    : 0x8
+		Pointee's logAlignment : 0x0	Space : 0x0	cbank : 0x1f	Parameter Space : CBANK	
+	<0x8>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x1	Offset  : 0x8	Size    : 0x8
+		Pointee's logAlignment : 0x0	Space : 0x0	cbank : 0x1f	Parameter Space : CBANK	
+	<0x9>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x0	Offset  : 0x0	Size    : 0x8
+		Pointee's logAlignment : 0x0	Space : 0x0	cbank : 0x1f	Parameter Space : CBANK	
+	<0x10>
+	Attribute:	EIATTR_MAXREG_COUNT
+	Format:	EIFMT_HVAL
+	Value:	0xff
+	<0x11>
+	Attribute:	EIATTR_EXIT_INSTR_OFFSETS
+	Format:	EIFMT_SVAL
+	Value:	0x7a0 0x820 
+
+
+.nv.callgraph
+ <0,-1>
+ <0,-2>
+ <0,-3>
+ <0,-4>
+
+
+.nv.rel.action
+Header : Base Relocation : R_CUDA_CONST_FIELD22_37
+Reloc type : Symbol Kind,Addend Shift,Source Position1,length1,Destination Position1,Source Position2,length2,Destination Position2
+R_CUDA_CONST_FIELD22_37 : EIVALUE_SYM_KIND_ADDR,0,0,17,37,0,5,54
+
+
+.text._Z15winograd_conv2dPKfS0_Pfii
+bar = 0	reg = 48	lmem=0	smem=0
+0x00017a02 0x00000a00 0x00000f00 0x000fe400
+0x00007919 0x00000000 0x00002600 0x000e2200
+0x001c7805 0x00000000 0x0001ff00 0x000fe200
+0x001e7805 0x00000000 0x0001ff00 0x000fe200
+0x00207805 0x00000000 0x0001ff00 0x000fe200
+0x00057919 0x00000000 0x00002200 0x000e2200
+0x00227805 0x00000000 0x0001ff00 0x000fe200
+0x00247805 0x00000000 0x0001ff00 0x000fe200
+0x001a7805 0x00000000 0x0001ff00 0x000fe200
+0x00047919 0x00000000 0x00002500 0x000e6200
+0x00147202 0x000000ff 0x00000f00 0x000fc600
+0x00037919 0x00000000 0x00002100 0x000e6200
+0x00007a24 0x00000100 0x078e0205 0x001fca00
+0x00057a10 0x00005f00 0x07ffe0ff 0x000fe400
+0x00007802 0x00000004 0x00000f00 0x000fe200
+0x04047a24 0x00000000 0x078e0203 0x002fe200
+0x0500780c 0x000001ff 0x03f24270 0x040fe400
+0x0500780c 0x000001fe 0x03f04270 0x040fe400
+0x04047a10 0x00005e00 0x07ffe0ff 0x000fe400
+0x05057819 0x00000001 0x000006ff 0x000fc400
+0x0400780c 0x000001ff 0x00f44670 0x040fe400
+0x04037211 0x00000005 0x078e58ff 0x040fe400
+0x0400780c 0x000001ff 0x00764670 0x040fe400
+0x0400780c 0x000001fe 0x00f24670 0x040fe200
+0x03027625 0x00005800 0x078e0200 0x000fe200
+0x0400780c 0x000001fe 0x00704670 0x000fe400
+0x00177202 0x000000ff 0x00000f00 0x000fca00
+0x021da381 0x00000000 0x001e6900 0x000ea800
+0x021ca381 0x00000400 0x001e6900 0x000ee800
+0x021fb381 0x00000800 0x001e6900 0x000f2800
+0x02219381 0x00200000 0x001e6900 0x000ea800
+0x02238381 0x00200800 0x001e6900 0x000f2800
+0x02229381 0x00200400 0x001e6900 0x000ee800
+0x021eb381 0x00000c00 0x001e6900 0x00016800
+0x02248381 0x00200c00 0x001e6900 0x00016800
+0x0220a381 0x00100000 0x001e6900 0x00016800
+0x021ba381 0x00100400 0x001e6900 0x00016800
+0x0214b381 0x00100800 0x001e6900 0x00016200
+0x00047ab9 0x00005a00 0x00000a00 0x000fc600
+0x0217b381 0x00100c00 0x001e6900 0x00016200
+0x00187805 0x00000000 0x0001ff00 0x000fc600
+0xff0f7981 0x00001404 0x0c1e6900 0x000f6800
+0xff107981 0x00001004 0x0c1e6900 0x000f6800
+0xff097981 0x00001804 0x0c1e6900 0x000f6800
+0xff0c7981 0x00000404 0x0c1e6900 0x000f6800
+0xff087981 0x00001c04 0x0c1e6900 0x000f6800
+0xff137981 0x00000004 0x0c1e6900 0x000f6800
+0xff167981 0x00000804 0x0c1e6900 0x000f6800
+0xff077981 0x00002404 0x0c1e6900 0x000f6800
+0xff0a7981 0x00000c04 0x0c1e6900 0x000f6800
+0xff0e7981 0x00002004 0x0c1e6900 0x000f6800
+0xff067981 0x00002804 0x0c1e6900 0x000f6800
+0xff127981 0x00002c04 0x0c1e6900 0x000f6800
+0x02259381 0x00300000 0x001e6900 0x00016800
+0x021a9381 0x00300400 0x001e6900 0x00016800
+0x02198381 0x00300800 0x001e6900 0x00016800
+0x02188381 0x00300c00 0x001e6900 0x00016800
+0xff157981 0x00003004 0x0c1e6900 0x000f6800
+0xff117981 0x00003404 0x0c1e6900 0x000f6800
+0xff0d7981 0x00003804 0x0c1e6900 0x000f6800
+0xff0b7981 0x00003c04 0x0c1e6900 0x000f6200
+0x21267221 0x0000001d 0x00000100 0x004fc400
+0x231f7221 0x0000001f 0x00000100 0x010fe400
+0x221c7221 0x0000001c 0x00000100 0x008fe400
+0x1f267221 0x00000026 0x00000100 0x040fe400
+0x1f037221 0x0000001c 0x00000000 0x141fe400
+0x1f1d7221 0x8000001c 0x00000000 0x000fe400
+0x24277221 0x0000001e 0x00000100 0x020fc400
+0x211f7221 0x00000020 0x00000000 0x140fe400
+0x212b7221 0x80000020 0x00000000 0x000fe400
+0x22217221 0x0000001b 0x00000000 0x000fe400
+0x23027221 0x00000014 0x00000000 0x000fe400
+0x1c277221 0x80000027 0x00000000 0x000fe400
+0x222d7221 0x8000001b 0x00000000 0x000fc400
+0x23287221 0x80000014 0x00000000 0x000fe400
+0x021c7221 0x00000021 0x00000000 0x000fe400
+0x24227221 0x00000017 0x00000000 0x000fe400
+0x02237221 0x0000001f 0x00000100 0x040fe400
+0x021e7221 0x80000021 0x00000000 0x000fe400
+0x1c0f7220 0x0000000f 0x00400000 0x000fc400
+0x21297221 0x80000022 0x00000000 0x000fe400
+0x23107220 0x00000010 0x00400000 0x000fe400
+0x1e1e7220 0x00000009 0x00400000 0x000fe400
+0x28027221 0x0000002d 0x00000000 0x000fe400
+0x03037223 0x0000000c 0x0000000f 0x000fe400
+0x24247221 0x80000017 0x00000000 0x000fc400
+0x282b7221 0x0000002b 0x00000100 0x040fe400
+0x281f7221 0x8000002d 0x00000000 0x000fe400
+0x29297220 0x00000008 0x00400000 0x000fe400
+0x26137223 0x00000013 0x00000010 0x000fe400
+0x1d167223 0x00000016 0x0000001e 0x000fe400
+0x02087223 0x00000007 0x00000003 0x000fc400
+0x2d217221 0x80000024 0x00000000 0x000fe400
+0x270a7223 0x0000000a 0x00000029 0x000fe400
+0x2b137223 0x0000000e 0x00000013 0x000fe400
+0x1f037223 0x00000006 0x00000016 0x000fe400
+0x130c7221 0x00000008 0x00000000 0x000fe400
+0x210a7223 0x00000012 0x0000000a 0x000fc400
+0x08097221 0x80000003 0x00000000 0x000fe400
+0x04138824 0x000007fc 0x078e0205 0x000fe400
+0x25207221 0x00000020 0x00000100 0x000fe400
+0x1a1a7221 0x0000001b 0x00000100 0x000fe400
+0x0a1d7221 0x00000009 0x00000100 0x000fe400
+0x19197221 0x00000014 0x00000100 0x000fc400
+0x031b7221 0x0000000c 0x00000000 0x000fe400
+0x13088625 0x00005c00 0x078e0200 0x000fc800
+0x18177221 0x00000017 0x00000100 0x000fe400
+0x2b0e7223 0x0000000e 0x00000110 0x000fe400
+0x19207221 0x00000020 0x00000100 0x040fe400
+0x190a7221 0x0000001a 0x00000000 0x140fe400
+0x02027223 0x00000007 0x0000010f 0x000fe400
+0x190c7221 0x8000001a 0x00000000 0x000fe200
+0x08008386 0x0000001b 0x0010e900 0x0001e200
+0x1a1a7221 0x80000017 0x00000000 0x000fc400
+0x200e7223 0x00000015 0x0000010e 0x000fe200
+0x08008386 0x0000041d 0x0010e900 0x0001e200
+0x1f067223 0x00000006 0x0000011e 0x000fe400
+0x21127223 0x00000012 0x00000129 0x000fe400
+0x0a117223 0x00000011 0x00000102 0x000fe400
+0x0c067223 0x0000000d 0x00000106 0x000fe400
+0x1a0b7223 0x0000000b 0x00000112 0x000fc400
+0x0e037221 0x00000011 0x00000000 0x000fe200
+0x0000094d 0x00000000 0x03800000 0x000fee00
+0x04077824 0x000007fc 0x078e0205 0x001fe400
+0x11047221 0x80000006 0x00000000 0x000fe400
+0x06057221 0x00000003 0x00000000 0x000fe400
+0x07027625 0x00005c00 0x078e0200 0x000fc800
+0x0b0b7221 0x00000004 0x00000100 0x000fc800
+0x02007386 0x000ff805 0x0010e900 0x000fe800
+0x02007386 0x000ffc0b 0x0010e900 0x000fe200
+0x0000794d 0x00000000 0x03800000 0x000fea00
+0x00007947 0xfffffff0 0x0383ffff 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+
+
+.section .debug_frame
+decodeDebugFrame, frameBuf 0xffffffff, total_length 112
+CIE length 36, cie_id -1
+version 3
+augmentation slen 1
+augmentation 
+code_align_factor slen 1
+data_align_factor slen 1
+ Debug Frame Common Information Entry
+  length:                 36
+  CIE_id :                -1
+  version:                3
+  augmentation:           
+  code align factor:      4
+  data align factor:      -4
+  return address register 0xffffffff
+  initial instructions: 19 bytes, ptr = 0x8080810c, frameBuf = 0xffffffff
+  DW_CFA_def_cfa register R1, offset 0
+  DW_CFA_same_value R255
+  DW_CFA_same_value R1
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+ Debug Frame Description Entry
+  length:                 52
+  CIE_pointer:            0
+  initial_location:       0x0
+  address_range:          0x880
+  function:               _Z15winograd_conv2dPKfS0_Pfii
+  instructions: 28 bytes
+  DW_CFA_advance_loc4 delta 4
+  DW_CFA_advance_loc4 delta 488
+  DW_CFA_def_cfa register R1, offset 0
+  DW_CFA_advance_loc4 delta 28
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+
+.section .rel.debug_frame	REL
+0x44    _Z15winograd_conv2dPKfS0_Pfii    R_CUDA_64
+
+Fatbin ptx code:
+================
+arch = sm_75
+code version = [8,5]
+host = linux
+compile_size = 64bit
+compressed
+ptxasOptions = 
+
+Fatbin elf code:
+================
+arch = sm_75
+code version = [1,7]
+host = linux
+compile_size = 64bit
+
+64bit elf: type=2, abi=7, sm=75, toolkit=125, flags = 0x4b054b
+Sections:
+Index Offset   Size ES Align        Type        Flags Link     Info Name
+    1     40     6a  0  1            STRTAB       0    0        0 .shstrtab
+    2     aa     6a  0  1            STRTAB       0    0        0 .strtab
+    3    118     48 18  8            SYMTAB       0    2        3 .symtab
+    4    160      0  0  1          PROGBITS       0    0        0 .debug_frame
+    5    160     20  8  4    CUDA_CALLGRAPH       0    3        0 .nv.callgraph
+    6    180     10  8  8    CUDA_RELOCINFO       0    0        0 .nv.rel.action
+
+.section .strtab
+
+.section .shstrtab
+
+.section .symtab
+ index           value           size      info    other  shndx    name  
+   0               0               0        0        0      0     (null)
+ 0x1               0               0      0x3        0    0x5     .nv.callgraph
+ 0x2               0               0      0x3        0    0x6     .nv.rel.action
+
+
+.nv.callgraph
+ <0,-1>
+ <0,-2>
+ <0,-3>
+ <0,-4>
+
+
+.nv.rel.action
+Header : Base Relocation : R_CUDA_CONST_FIELD22_37
+Reloc type : Symbol Kind,Addend Shift,Source Position1,length1,Destination Position1,Source Position2,length2,Destination Position2
+R_CUDA_CONST_FIELD22_37 : EIVALUE_SYM_KIND_ADDR,0,0,17,37,0,5,54
+
+.section .debug_frame
+decodeDebugFrame, frameBuf 0xd8bae00, total_length 0
+
+Fatbin ptx code:
+================
+arch = sm_75
+code version = [8,5]
+host = linux
+compile_size = 64bit
+compressed
+ptxasOptions = 

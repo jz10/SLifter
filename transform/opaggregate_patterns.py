@@ -255,6 +255,7 @@ PATTERN_TABLE = {
                     "use": ["RZ", "0x1f", "reg2"],
                 }
             ],
+            # "defined": ["reg1:reg2"],
             "out": [
                 {
                     "opcodes": ["CAST64"],

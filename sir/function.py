@@ -10,15 +10,6 @@ class Function:
         self.args = []
         self.arg_map = {}
         self.block_map = {}
-
-    # Resovle instructions' operands
-    def resolve_operands(self, insts):
-        self.args = []
-        self.regs = []
-        for inst in insts:
-            args, regs = inst.get_args_and_regs()
-            self.args.extend(args)
-            self.regs.extend(regs)
         
     # Get the arguments for current function
     def get_args(self, lifter):
@@ -31,9 +22,14 @@ class Function:
                     if operand.is_arg:
                         name = operand.get_ir_name(lifter)
                         arg_map[name] = operand
+                        
+        # Keep one operand per argument
+        unique = {}
+        for operand in arg_map.values():
+            unique.setdefault(operand.offset, operand)
 
         # Sort the map
-        args = sorted(arg_map.values(), key=lambda x: x.arg_offset)
+        args = sorted(unique.values(), key=lambda x: x.offset)
 
         return args
 
